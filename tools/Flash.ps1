@@ -142,12 +142,68 @@ function Install-PlatformIO {
     return $pio
 }
 
+# Stellt Git sicher - installiert es bei Bedarf (winget), nur fuer den Fall,
+# dass das Skript einzeln kopiert wurde und das Repo geklont werden muss.
+function Ensure-Git {
+    $git = Get-Command git -ErrorAction SilentlyContinue
+    if ($git) { return $git.Source }
+    Write-Host 'Git nicht gefunden - installiere es ...' -ForegroundColor Yellow
+    $winget = Get-Command winget -ErrorAction SilentlyContinue
+    if ($winget) {
+        & winget install --id Git.Git -e --source winget --scope user `
+            --accept-package-agreements --accept-source-agreements
+        Update-SessionPath
+        $git = Get-Command git -ErrorAction SilentlyContinue
+        if ($git) { return $git.Source }
+    }
+    Write-Host 'Git konnte nicht automatisch installiert werden. Bitte Git installieren' -ForegroundColor Red
+    Write-Host '(https://git-scm.com/download/win) ODER das komplette Repo laden:' -ForegroundColor Red
+    Write-Host '  https://github.com/peterhagelhof7-cmd/esp-infoscreen' -ForegroundColor Red
+    exit 1
+}
+
+# Findet das firmware/-Verzeichnis unabhaengig davon, von wo das Skript laeuft.
+# Faellt zurueck auf einen Klon des oeffentlichen Repos, wenn das Skript einzeln
+# (ohne das restliche Projekt) kopiert wurde.
+$RepoUrl = 'https://github.com/peterhagelhof7-cmd/esp-infoscreen.git'
+function Resolve-FirmwareDir {
+    $candidates = @(
+        (Join-Path $PSScriptRoot '..\firmware'),   # Skript liegt in tools/ (Normalfall)
+        (Join-Path $PSScriptRoot 'firmware'),        # Skript liegt im Repo-Root
+        (Join-Path (Get-Location) 'firmware'),       # aus dem Repo-Root gestartet
+        (Get-Location)                               # aktuelles Verzeichnis IST firmware/
+    )
+    foreach ($c in $candidates) {
+        if (Test-Path (Join-Path $c 'platformio.ini')) { return (Resolve-Path $c).Path }
+    }
+    # Nicht gefunden -> Skript wurde einzeln kopiert. Repo klonen.
+    Write-Host 'firmware/ nicht gefunden - hole das Projekt-Repo ...' -ForegroundColor Yellow
+    Ensure-Git | Out-Null
+    $dest = Join-Path $PSScriptRoot 'esp-infoscreen'
+    $destFw = Join-Path $dest 'firmware'
+    if (Test-Path (Join-Path $destFw 'platformio.ini')) {
+        Write-Host "  Vorhandenen Klon aktualisieren: $dest" -ForegroundColor DarkGray
+        & git -C $dest pull --ff-only | Out-Null
+    } else {
+        Write-Host "  Klone $RepoUrl -> $dest" -ForegroundColor DarkGray
+        & git clone --depth 1 $RepoUrl $dest
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "git clone fehlgeschlagen (Exit $LASTEXITCODE)." -ForegroundColor Red
+            exit $LASTEXITCODE
+        }
+    }
+    if (Test-Path (Join-Path $destFw 'platformio.ini')) { return (Resolve-Path $destFw).Path }
+    Write-Host 'firmware/ auch nach dem Klonen nicht gefunden.' -ForegroundColor Red
+    exit 1
+}
+
 $pio = Get-PlatformIO
 if (-not $pio) { $pio = Install-PlatformIO }
 
-# --- Ins firmware/-Verzeichnis wechseln (dieses Skript liegt in tools/) ------
-$firmwareDir = Resolve-Path (Join-Path $PSScriptRoot '..\firmware')
+# --- firmware/-Verzeichnis finden (oder Repo klonen) ------------------------
+$firmwareDir = Resolve-FirmwareDir
 Set-Location $firmwareDir
+Write-Host "Projekt: $firmwareDir" -ForegroundColor DarkGray
 $envName = 'esp32-8048S070N'
 
 function Invoke-Pio([string[]]$PioArgs, [string]$What) {
