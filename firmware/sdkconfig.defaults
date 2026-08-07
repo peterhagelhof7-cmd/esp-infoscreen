@@ -36,6 +36,12 @@ CONFIG_LCD_RGB_RESTART_IN_VSYNC=y
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=y
 
+# mbedTLS-Allokationen ins PSRAM verlagern: ein einzelner TLS-Kontext braucht
+# einen grossen zusammenhaengenden Block, der im internen RAM (durch WiFi/LVGL
+# fragmentiert) zeitweise fehlt -> mbedtls_ssl_setup -0x008D. Im 8-MB-PSRAM ist
+# reichlich Platz. Empfohlener Weg fuer TLS auf PSRAM-Boards.
+CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
+
 # --- OTA: Bootloader-Rollback (frisch geflashte App bleibt "pending", bis sie
 # per esp_ota_mark_app_valid_cancel_rollback() bestaetigt wird; sonst faellt der
 # Bootloader beim naechsten Neustart auf die vorige App zurueck) ---
