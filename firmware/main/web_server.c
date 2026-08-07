@@ -2,6 +2,7 @@
 #include "network_manager.h"
 #include "ota_manager.h"
 #include "config_store.h"
+#include "termine.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -146,6 +147,34 @@ static esp_err_t root_get(httpd_req_t *req)
         rotated ? "checked" : "");
     httpd_resp_sendstr_chunk(req, disp_card);
 
+    // --- Termine-Card (anlegen / loeschen) ---
+    httpd_resp_sendstr_chunk(req,
+        "<div class=card style='margin-top:16px'><h1>Termine</h1>"
+        "<div class=sub>naechste Termine (erscheinen im Kalender)</div>");
+    {
+        termine_entry_t te[40];
+        int tn = termine_get_all(te, 40);
+        for (int i = 0; i < tn; i++) {
+            char de[128], row[640];
+            html_escape(te[i].title, de, sizeof(de));
+            snprintf(row, sizeof(row),
+                "<div style='display:flex;justify-content:space-between;align-items:center;margin:6px 0'>"
+                "<span>%s %s %s</span>"
+                "<form method=post action=/tdel style='margin:0'>"
+                "<input type=hidden name=i value=%d>"
+                "<button type=submit style='width:auto;padding:4px 10px;background:#8a3a3a'>x</button></form></div>",
+                te[i].date, te[i].time[0] ? te[i].time : "", de, i);
+            httpd_resp_sendstr_chunk(req, row);
+        }
+        if (tn == 0) httpd_resp_sendstr_chunk(req, "<div class=st>keine Termine</div>");
+    }
+    httpd_resp_sendstr_chunk(req,
+        "<form method=post action=/tadd style='margin-top:12px'>"
+        "<label>Datum</label><input type=date name=date required>"
+        "<label>Uhrzeit (optional)</label><input type=time name=time>"
+        "<label>Titel</label><input type=text name=title maxlength=39 required>"
+        "<button type=submit>Termin hinzufuegen</button></form></div>");
+
     // --- Fritzbox-Card (Adresse, leer = Gateway) ---
     char fbhost[64] = { 0 };
     config_get_str("fb_host", fbhost, sizeof(fbhost));
@@ -205,6 +234,43 @@ static esp_err_t display_post(httpd_req_t *req)
     vTaskDelay(pdMS_TO_TICKS(800));
     esp_restart();
     return ESP_OK;
+}
+
+static esp_err_t redirect_root(httpd_req_t *req)
+{
+    httpd_resp_set_status(req, "303 See Other");
+    httpd_resp_set_hdr(req, "Location", "/");
+    httpd_resp_send(req, NULL, 0);
+    return ESP_OK;
+}
+
+static esp_err_t tadd_post(httpd_req_t *req)
+{
+    char body[256];
+    int total = req->content_len < (int)sizeof(body) - 1 ? req->content_len : (int)sizeof(body) - 1;
+    int recvd = total > 0 ? httpd_req_recv(req, body, total) : 0;
+    if (recvd < 0) return ESP_FAIL;
+    body[recvd > 0 ? recvd : 0] = '\0';
+
+    char date[16] = { 0 }, time[8] = { 0 }, title[48] = { 0 };
+    form_field(body, "date", date, sizeof(date));
+    form_field(body, "time", time, sizeof(time));
+    form_field(body, "title", title, sizeof(title));
+    termine_add(date, time, title);
+    return redirect_root(req);
+}
+
+static esp_err_t tdel_post(httpd_req_t *req)
+{
+    char body[64];
+    int total = req->content_len < (int)sizeof(body) - 1 ? req->content_len : (int)sizeof(body) - 1;
+    int recvd = total > 0 ? httpd_req_recv(req, body, total) : 0;
+    if (recvd < 0) return ESP_FAIL;
+    body[recvd > 0 ? recvd : 0] = '\0';
+
+    char idx[8] = { 0 };
+    if (form_field(body, "i", idx, sizeof(idx))) termine_delete(atoi(idx));
+    return redirect_root(req);
 }
 
 static esp_err_t fritzbox_post(httpd_req_t *req)
@@ -297,6 +363,7 @@ void web_server_start(void)
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.lru_purge_enable = true;
     cfg.stack_size = 8192;
+    cfg.max_uri_handlers = 12;
     httpd_handle_t server = NULL;
     if (httpd_start(&server, &cfg) != ESP_OK) {
         ESP_LOGE(TAG, "HTTP-Server-Start fehlgeschlagen");
@@ -307,10 +374,14 @@ void web_server_start(void)
     httpd_uri_t ota  = { .uri = "/ota", .method = HTTP_POST, .handler = ota_post };
     httpd_uri_t disp = { .uri = "/display", .method = HTTP_POST, .handler = display_post };
     httpd_uri_t fb   = { .uri = "/fritzbox", .method = HTTP_POST, .handler = fritzbox_post };
+    httpd_uri_t tadd = { .uri = "/tadd", .method = HTTP_POST, .handler = tadd_post };
+    httpd_uri_t tdel = { .uri = "/tdel", .method = HTTP_POST, .handler = tdel_post };
     httpd_register_uri_handler(server, &root);
     httpd_register_uri_handler(server, &save);
     httpd_register_uri_handler(server, &ota);
     httpd_register_uri_handler(server, &disp);
     httpd_register_uri_handler(server, &fb);
+    httpd_register_uri_handler(server, &tadd);
+    httpd_register_uri_handler(server, &tdel);
     ESP_LOGI(TAG, "HTTP-Konfig-Server gestartet (Port 80)");
 }

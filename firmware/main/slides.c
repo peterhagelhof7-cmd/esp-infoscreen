@@ -3,10 +3,35 @@
 #include "network_manager.h"
 #include "time_sync.h"
 #include "fritzbox.h"
+#include "muell.h"
+#include "termine.h"
+#include "dwd.h"
+#include "spessart.h"
 
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
 #include "lvgl.h"
+
+// Umlaute/ss fuer die eingebauten LVGL-Schriften transliterieren (ue/oe/ae/ss),
+// da Montserrat keine Latin-1-Sonderzeichen enthaelt.
+static void de_ascii(const char *in, char *out, size_t out_len)
+{
+    size_t o = 0;
+    for (size_t i = 0; in[i] && o + 3 < out_len; ) {
+        if ((unsigned char)in[i] == 0xC3 && in[i + 1]) {
+            const char *rep = NULL;
+            switch ((unsigned char)in[i + 1]) {
+                case 0xA4: rep = "ae"; break; case 0xB6: rep = "oe"; break; case 0xBC: rep = "ue"; break;
+                case 0x84: rep = "Ae"; break; case 0x96: rep = "Oe"; break; case 0x9C: rep = "Ue"; break;
+                case 0x9F: rep = "ss"; break;
+            }
+            if (rep) { out[o++] = rep[0]; out[o++] = rep[1]; i += 2; continue; }
+        }
+        out[o++] = in[i++];
+    }
+    out[o] = '\0';
+}
 
 // Groesste eingebaute LVGL-Schrift = Montserrat 48. Fuer die "Helden"-Werte.
 #define FONT_BIG   (&lv_font_montserrat_48)
@@ -228,11 +253,141 @@ static void fritzbox_build(lv_obj_t *p)
 
 static const slide_t SLIDE_FRITZBOX = { "Internet (Fritzbox)", fritzbox_build, fritzbox_update };
 
+// ===================== Slide 5: Termine / Kalender ===========================
+// Naechste 5 Ereignisse = Nutzer-Termine + Muellabfuhr, nach Datum sortiert.
+// Statisch (baut bei jedem Anzeigen neu) -> kein Flackern.
+typedef struct { char date[11]; char label[56]; } cal_event_t;
+
+static void calendar_build(lv_obj_t *p)
+{
+    char today[11]; time_today_str(today, sizeof(today));
+
+    cal_event_t ev[40];
+    int n = 0;
+
+    // Nutzer-Termine
+    termine_entry_t te[40];
+    int tn = termine_get_all(te, 40);
+    for (int i = 0; i < tn && n < 40; i++) {
+        if (today[0] && strcmp(te[i].date, today) < 0) continue;   // Vergangenes weglassen
+        strncpy(ev[n].date, te[i].date, sizeof(ev[0].date) - 1); ev[n].date[10] = '\0';
+        char ti[48]; de_ascii(te[i].title, ti, sizeof(ti));
+        if (te[i].time[0]) snprintf(ev[n].label, sizeof(ev[n].label), "%s %s", te[i].time, ti);
+        else              snprintf(ev[n].label, sizeof(ev[n].label), "%s", ti);
+        n++;
+    }
+    // Muellabfuhr
+    muell_entry_t me[16];
+    int mn = muell_get(me, 16);
+    for (int i = 0; i < mn && n < 40; i++) {
+        strncpy(ev[n].date, me[i].day, sizeof(ev[0].date) - 1); ev[n].date[10] = '\0';
+        char ti[32]; de_ascii(me[i].title, ti, sizeof(ti));
+        snprintf(ev[n].label, sizeof(ev[n].label), "Abfuhr: %s", ti);
+        n++;
+    }
+    // nach Datum sortieren (ISO-String)
+    for (int i = 0; i < n; i++)
+        for (int j = i + 1; j < n; j++)
+            if (strcmp(ev[j].date, ev[i].date) < 0) { cal_event_t t = ev[i]; ev[i] = ev[j]; ev[j] = t; }
+
+    int show = n < 5 ? n : 5;
+    if (show == 0) {
+        lv_obj_t *l = lv_label_create(p);
+        lv_obj_set_style_text_font(l, FONT_MED, 0);
+        lv_obj_set_style_text_color(l, lv_color_hex(0xb0b8d0), 0);
+        lv_label_set_text(l, "Keine Termine");
+        lv_obj_center(l);
+        return;
+    }
+    for (int i = 0; i < show; i++) {
+        int yy = 0, mm = 0, dd = 0;
+        sscanf(ev[i].date, "%d-%d-%d", &yy, &mm, &dd);
+        char line[72];
+        snprintf(line, sizeof(line), "%02d.%02d.  %s", dd, mm, ev[i].label);
+        lv_obj_t *l = lv_label_create(p);
+        lv_obj_set_style_text_font(l, FONT_MED, 0);
+        lv_obj_set_style_text_color(l, lv_color_hex(0xe0e0e0), 0);
+        lv_obj_set_width(l, 720);
+        lv_label_set_long_mode(l, LV_LABEL_LONG_DOT);
+        lv_label_set_text(l, line);
+        lv_obj_align(l, LV_ALIGN_TOP_LEFT, 40, 6 + i * 54);
+    }
+}
+
+static const slide_t SLIDE_CALENDAR = { "Termine", calendar_build, NULL };
+
+// ======================= Slide 6: Wetterwarnung (DWD) ========================
+static void dwd_build(lv_obj_t *p)
+{
+    dwd_data_t d; dwd_get(&d);
+
+    lv_obj_t *l1 = lv_label_create(p);
+    lv_obj_set_style_text_font(l1, FONT_BIG, 0);
+    lv_obj_set_width(l1, 740);
+    lv_label_set_long_mode(l1, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_align(l1, LV_TEXT_ALIGN_CENTER, 0);
+
+    if (!d.valid) {
+        lv_label_set_text(l1, "DWD nicht erreichbar");
+        lv_obj_set_style_text_color(l1, lv_color_hex(0xb0b8d0), 0);
+        lv_obj_center(l1);
+        return;
+    }
+    if (d.count == 0) {
+        lv_label_set_text(l1, "Keine Wetterwarnung");
+        lv_obj_set_style_text_color(l1, lv_color_hex(0x7ce38b), 0);
+        lv_obj_center(l1);
+        return;
+    }
+    char hl[96]; de_ascii(d.headline, hl, sizeof(hl));
+    lv_label_set_text(l1, hl[0] ? hl : "Wetterwarnung aktiv");
+    uint32_t c = 0xf5c542;
+    if (strcmp(d.severity, "Severe") == 0 || strcmp(d.severity, "Extreme") == 0) c = 0xef6b6b;
+    lv_obj_set_style_text_color(l1, lv_color_hex(c), 0);
+    lv_obj_align(l1, LV_ALIGN_CENTER, 0, 0);
+}
+
+static const slide_t SLIDE_DWD = { "Wetterwarnung (DWD)", dwd_build, NULL };
+
+// ==================== Slide 7: Spessartwetter (Temp/Wind) ====================
+static void spessart_build(lv_obj_t *p)
+{
+    spessart_data_t s; spessart_get(&s);
+
+    if (!s.valid) {
+        lv_obj_t *l = lv_label_create(p);
+        lv_obj_set_style_text_font(l, FONT_MED, 0);
+        lv_obj_set_style_text_color(l, lv_color_hex(0xb0b8d0), 0);
+        lv_label_set_text(l, "spessartwetter nicht erreichbar");
+        lv_obj_center(l);
+        return;
+    }
+
+    char t[24]; snprintf(t, sizeof(t), "%s \xc2\xb0""C", s.temp[0] ? s.temp : "?");
+    lv_obj_t *lt = lv_label_create(p);
+    lv_obj_set_style_text_font(lt, FONT_BIG, 0);
+    lv_obj_set_style_text_color(lt, lv_color_hex(0xffffff), 0);
+    lv_label_set_text(lt, t);
+    lv_obj_align(lt, LV_ALIGN_CENTER, 0, -40);
+
+    char w[32]; snprintf(w, sizeof(w), "Wind: %s km/h", s.wind[0] ? s.wind : "?");
+    lv_obj_t *lw = lv_label_create(p);
+    lv_obj_set_style_text_font(lw, FONT_MED, 0);
+    lv_obj_set_style_text_color(lw, lv_color_hex(0x8ab4f8), 0);
+    lv_label_set_text(lw, w);
+    lv_obj_align(lw, LV_ALIGN_CENTER, 0, 40);
+}
+
+static const slide_t SLIDE_SPESSART = { "Spessartwetter", spessart_build, NULL };
+
 // ============================================================================
 void slides_register_all(void)
 {
     slideshow_add(&SLIDE_CLOCK);
+    slideshow_add(&SLIDE_CALENDAR);
+    slideshow_add(&SLIDE_DWD);
+    slideshow_add(&SLIDE_SPESSART);
+    slideshow_add(&SLIDE_FRITZBOX);
     slideshow_add(&SLIDE_NETWORK);
     slideshow_add(&SLIDE_WIFI);
-    slideshow_add(&SLIDE_FRITZBOX);
 }

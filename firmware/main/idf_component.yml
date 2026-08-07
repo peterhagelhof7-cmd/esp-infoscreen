@@ -9,3 +9,6 @@ dependencies:
     version: "~9.3.0"
   espressif/esp_lvgl_port:
     version: "^2.4.0"
+  # cJSON (in IDF 6 als Managed Component, Komponentenname espressif__cjson)
+  espressif/cjson:
+    version: "*"

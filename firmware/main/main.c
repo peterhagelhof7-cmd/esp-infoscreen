@@ -7,6 +7,9 @@
 #include "web_server.h"
 #include "ota_manager.h"
 #include "fritzbox.h"
+#include "muell.h"
+#include "dwd.h"
+#include "spessart.h"
 
 #include "esp_log.h"
 #include "esp_psram.h"
@@ -29,7 +32,10 @@ void app_main(void)
     // Netzwerk VOR den Slides (Slides fragen Netzwerkstatus ab)
     network_manager_init();
     time_sync_init();
-    fritzbox_init();   // Hintergrund-Poller (UPnP/IGD)
+    fritzbox_init();   // UPnP/IGD
+    muell_init();      // MyMuell/jumomind
+    dwd_init();        // Bright Sky (DWD-Warnungen)
+    spessart_init();   // spessartwetter.de
 
     // Slideshow aufbauen: Uhr/Datum, Netzwerk, WLAN-Empfang - alle 10 s wechseln
     slideshow_init(disp);

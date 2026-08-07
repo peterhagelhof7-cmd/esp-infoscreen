@@ -10,6 +10,11 @@ idf_component_register(
         "web_server.c"
         "ota_manager.c"
         "fritzbox.c"
+        "http_util.c"
+        "muell.c"
+        "termine.c"
+        "dwd.c"
+        "spessart.c"
     INCLUDE_DIRS
         "."
     REQUIRES
@@ -25,4 +30,6 @@ idf_component_register(
         driver
         app_update
         esp_partition
+        esp-tls
+        espressif__cjson
 )

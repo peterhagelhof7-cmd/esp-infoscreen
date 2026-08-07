@@ -42,3 +42,11 @@ bool time_sync_is_valid(void)
     localtime_r(&now, &tm);
     return (tm.tm_year + 1900) >= 2021;   // vor Sync steht die Uhr auf 1970
 }
+
+void time_today_str(char *out, size_t len)
+{
+    if (!time_sync_is_valid()) { if (len) out[0] = '\0'; return; }
+    time_t now = 0; time(&now);
+    struct tm tm; localtime_r(&now, &tm);
+    snprintf(out, len, "%04d-%02d-%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
+}

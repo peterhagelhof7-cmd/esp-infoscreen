@@ -32,6 +32,10 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
 # --- RGB-LCD: Neustart des Panels im VSYNC (verhindert Bild-Drift) ---
 CONFIG_LCD_RGB_RESTART_IN_VSYNC=y
 
+# --- HTTPS: Zertifikatsbundle (fuer esp_crt_bundle_attach) ---
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=y
+
 # --- OTA: Bootloader-Rollback (frisch geflashte App bleibt "pending", bis sie
 # per esp_ota_mark_app_valid_cancel_rollback() bestaetigt wird; sonst faellt der
 # Bootloader beim naechsten Neustart auf die vorige App zurueck) ---
