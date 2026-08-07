@@ -6,6 +6,7 @@
 #include "time_sync.h"
 #include "web_server.h"
 #include "ota_manager.h"
+#include "fritzbox.h"
 
 #include "esp_log.h"
 #include "esp_psram.h"
@@ -28,6 +29,7 @@ void app_main(void)
     // Netzwerk VOR den Slides (Slides fragen Netzwerkstatus ab)
     network_manager_init();
     time_sync_init();
+    fritzbox_init();   // Hintergrund-Poller (UPnP/IGD)
 
     // Slideshow aufbauen: Uhr/Datum, Netzwerk, WLAN-Empfang - alle 10 s wechseln
     slideshow_init(disp);

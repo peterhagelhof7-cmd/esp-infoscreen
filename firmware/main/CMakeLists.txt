@@ -9,6 +9,7 @@ idf_component_register(
         "network_manager.c"
         "web_server.c"
         "ota_manager.c"
+        "fritzbox.c"
     INCLUDE_DIRS
         "."
     REQUIRES
@@ -17,6 +18,7 @@ idf_component_register(
         esp_netif
         esp_event
         esp_http_server
+        esp_http_client
         esp_timer
         esp_lcd
         esp_psram

@@ -146,6 +146,23 @@ static esp_err_t root_get(httpd_req_t *req)
         rotated ? "checked" : "");
     httpd_resp_sendstr_chunk(req, disp_card);
 
+    // --- Fritzbox-Card (Adresse, leer = Gateway) ---
+    char fbhost[64] = { 0 };
+    config_get_str("fb_host", fbhost, sizeof(fbhost));
+    char fbesc[80];
+    html_escape(fbhost, fbesc, sizeof(fbesc));
+    char fb_card[560];
+    snprintf(fb_card, sizeof(fb_card),
+        "<div class=card style='margin-top:16px'>"
+        "<h1>Fritzbox</h1><div class=sub>Adresse (leer = Gateway)</div>"
+        "<form method=post action=/fritzbox>"
+        "<input type=text name=host value=\"%s\" placeholder='z.B. 192.168.178.1 oder fritz.box'>"
+        "<button type=submit>Speichern</button></form>"
+        "<div class=st>Nutzt UPnP/IGD (Port 49000). In der Fritzbox muss "
+        "\"Statusinformationen &uuml;ber UPnP &uuml;bertragen\" aktiviert sein.</div></div>",
+        fbesc);
+    httpd_resp_sendstr_chunk(req, fb_card);
+
     // --- Firmware-Update-Card (OTA) ---
     httpd_resp_sendstr_chunk(req,
         "<div class=card style='margin-top:16px'>"
@@ -187,6 +204,25 @@ static esp_err_t display_post(httpd_req_t *req)
         "<h2>Gespeichert.</h2><p>Das Geraet startet neu und uebernimmt die Ausrichtung.</p></body>");
     vTaskDelay(pdMS_TO_TICKS(800));
     esp_restart();
+    return ESP_OK;
+}
+
+static esp_err_t fritzbox_post(httpd_req_t *req)
+{
+    char body[256];
+    int total = req->content_len < (int)sizeof(body) - 1 ? req->content_len : (int)sizeof(body) - 1;
+    int recvd = total > 0 ? httpd_req_recv(req, body, total) : 0;
+    if (recvd < 0) return ESP_FAIL;
+    body[recvd > 0 ? recvd : 0] = '\0';
+
+    char host[64] = { 0 };
+    form_field(body, "host", host, sizeof(host));
+    config_set_str("fb_host", host);   // leer = Gateway; wird beim naechsten Poll uebernommen
+    ESP_LOGI(TAG, "Fritzbox-Adresse gesetzt: '%s'", host[0] ? host : "(Gateway)");
+
+    httpd_resp_set_status(req, "303 See Other");
+    httpd_resp_set_hdr(req, "Location", "/");
+    httpd_resp_send(req, NULL, 0);
     return ESP_OK;
 }
 
@@ -270,9 +306,11 @@ void web_server_start(void)
     httpd_uri_t save = { .uri = "/save", .method = HTTP_POST, .handler = save_post };
     httpd_uri_t ota  = { .uri = "/ota", .method = HTTP_POST, .handler = ota_post };
     httpd_uri_t disp = { .uri = "/display", .method = HTTP_POST, .handler = display_post };
+    httpd_uri_t fb   = { .uri = "/fritzbox", .method = HTTP_POST, .handler = fritzbox_post };
     httpd_register_uri_handler(server, &root);
     httpd_register_uri_handler(server, &save);
     httpd_register_uri_handler(server, &ota);
     httpd_register_uri_handler(server, &disp);
+    httpd_register_uri_handler(server, &fb);
     ESP_LOGI(TAG, "HTTP-Konfig-Server gestartet (Port 80)");
 }

@@ -2,6 +2,7 @@
 #include "slideshow.h"
 #include "network_manager.h"
 #include "time_sync.h"
+#include "fritzbox.h"
 
 #include <stdio.h>
 #include <time.h>
@@ -168,10 +169,70 @@ static void wifi_build(lv_obj_t *p)
 
 static const slide_t SLIDE_WIFI = { "WLAN-Empfang", wifi_build, NULL };
 
+// ========================== Slide 4: Fritzbox / Internet =====================
+// Externe IP + Auslastung (aktuell / max). Aktualisiert waehrend sichtbar (die
+// Auslastung ist dynamisch); LVGL zeichnet gleichbleibende Werte nicht neu.
+static lv_obj_t *fb_ip, *fb_down, *fb_up;
+
+static void fritzbox_update(void)
+{
+    if (!fb_ip) return;
+    fritzbox_data_t d;
+    fritzbox_get(&d);
+
+    if (!d.reachable) {
+        lv_label_set_text(fb_ip, "Fritzbox nicht erreichbar");
+        lv_obj_set_style_text_color(fb_ip, lv_color_hex(0xf5c542), 0);
+        lv_label_set_text(fb_down, "");
+        lv_label_set_text(fb_up, "");
+        return;
+    }
+
+    char l[80];
+    snprintf(l, sizeof(l), "IP: %s", d.external_ip[0] ? d.external_ip : "-");
+    lv_label_set_text(fb_ip, l);
+    lv_obj_set_style_text_color(fb_ip, lv_color_hex(0xffffff), 0);
+
+    // Integer-Mathematik (kein Float-printf noetig):
+    // aktuelle Rate: BYTE/s -> Zehntel-Mbit/s = Bps*8/100000
+    // max. Linkrate: bit/s  -> Mbit/s        = bps/1000000
+    uint32_t dn10 = (uint32_t)((uint64_t)d.down_rate_Bps * 8 / 100000);
+    uint32_t up10 = (uint32_t)((uint64_t)d.up_rate_Bps   * 8 / 100000);
+    uint32_t dnmax = d.down_max_bps / 1000000;
+    uint32_t upmax = d.up_max_bps   / 1000000;
+
+    snprintf(l, sizeof(l), "Down: %u.%u / %u Mbit/s", (unsigned)(dn10 / 10), (unsigned)(dn10 % 10), (unsigned)dnmax);
+    lv_label_set_text(fb_down, l);
+    snprintf(l, sizeof(l), "Up: %u.%u / %u Mbit/s", (unsigned)(up10 / 10), (unsigned)(up10 % 10), (unsigned)upmax);
+    lv_label_set_text(fb_up, l);
+}
+
+static void fritzbox_build(lv_obj_t *p)
+{
+    fb_ip = lv_label_create(p);
+    lv_obj_set_style_text_font(fb_ip, FONT_BIG, 0);
+    lv_obj_align(fb_ip, LV_ALIGN_CENTER, 0, -70);
+
+    fb_down = lv_label_create(p);
+    lv_obj_set_style_text_font(fb_down, FONT_MED, 0);
+    lv_obj_set_style_text_color(fb_down, lv_color_hex(0x7ce38b), 0);
+    lv_obj_align(fb_down, LV_ALIGN_CENTER, 0, 10);
+
+    fb_up = lv_label_create(p);
+    lv_obj_set_style_text_font(fb_up, FONT_MED, 0);
+    lv_obj_set_style_text_color(fb_up, lv_color_hex(0x8ab4f8), 0);
+    lv_obj_align(fb_up, LV_ALIGN_CENTER, 0, 60);
+
+    fritzbox_update();
+}
+
+static const slide_t SLIDE_FRITZBOX = { "Internet (Fritzbox)", fritzbox_build, fritzbox_update };
+
 // ============================================================================
 void slides_register_all(void)
 {
     slideshow_add(&SLIDE_CLOCK);
     slideshow_add(&SLIDE_NETWORK);
     slideshow_add(&SLIDE_WIFI);
+    slideshow_add(&SLIDE_FRITZBOX);
 }
