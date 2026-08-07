@@ -32,6 +32,11 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
 # --- RGB-LCD: Neustart des Panels im VSYNC (verhindert Bild-Drift) ---
 CONFIG_LCD_RGB_RESTART_IN_VSYNC=y
 
+# --- OTA: Bootloader-Rollback (frisch geflashte App bleibt "pending", bis sie
+# per esp_ota_mark_app_valid_cancel_rollback() bestaetigt wird; sonst faellt der
+# Bootloader beim naechsten Neustart auf die vorige App zurueck) ---
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
 # --- LVGL (Farbtiefe 16 bit, passend zu RGB565) ---
 CONFIG_LV_COLOR_DEPTH_16=y
 # Groessere Schrift fuer gut lesbaren Text auf 800x480

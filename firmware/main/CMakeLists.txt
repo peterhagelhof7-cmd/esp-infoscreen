@@ -6,6 +6,7 @@ idf_component_register(
         "config_store.c"
         "network_manager.c"
         "web_server.c"
+        "ota_manager.c"
     INCLUDE_DIRS
         "."
     REQUIRES
@@ -17,4 +18,6 @@ idf_component_register(
         esp_lcd
         esp_psram
         driver
+        app_update
+        esp_partition
 )

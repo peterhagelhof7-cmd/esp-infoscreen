@@ -1,10 +1,14 @@
 #include "web_server.h"
 #include "network_manager.h"
+#include "ota_manager.h"
 
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "esp_http_server.h"
+#include "esp_system.h"
 #include "esp_log.h"
 
 static const char *TAG = "web";
@@ -125,10 +129,65 @@ static esp_err_t root_get(httpd_req_t *req)
     snprintf(st_line, sizeof(st_line), "<div class=st>Status: %s &middot; IP: %s</div>",
              modestr, st.ip[0] ? st.ip : "-");
     httpd_resp_sendstr_chunk(req, st_line);
+    httpd_resp_sendstr_chunk(req, "</div>");   // WLAN-Card schliessen
 
-    httpd_resp_sendstr_chunk(req, "</div></body></html>");
+    // --- Firmware-Update-Card (OTA) ---
+    httpd_resp_sendstr_chunk(req,
+        "<div class=card style='margin-top:16px'>"
+        "<h1>Firmware-Update</h1><div class=sub>.bin per OTA hochladen</div>"
+        "<input type=file id=fw accept='.bin'>"
+        "<button onclick='up()'>Hochladen &amp; Neustart</button>"
+        "<div class=st id=ost></div></div>"
+        "<script>"
+        "function up(){var f=document.getElementById('fw').files[0];"
+        "if(!f){alert('Bitte eine .bin-Datei waehlen');return;}"
+        "var s=document.getElementById('ost');var x=new XMLHttpRequest();x.open('POST','/ota');"
+        "x.upload.onprogress=function(e){if(e.lengthComputable)s.textContent='Hochladen... '+Math.round(e.loaded/e.total*100)+'%';};"
+        "x.onload=function(){s.textContent=(x.status==200)?'OK - Geraet startet neu.':'Fehler: '+x.responseText;};"
+        "x.onerror=function(){s.textContent='Upload-Fehler';};x.send(f);}"
+        "</script>");
+
+    httpd_resp_sendstr_chunk(req, "</body></html>");
     httpd_resp_sendstr_chunk(req, NULL);   // Ende
     return ESP_OK;
+}
+
+static esp_err_t ota_post(httpd_req_t *req)
+{
+    if (!ota_manager_begin()) {
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_sendstr(req, "OTA-Start fehlgeschlagen");
+        return ESP_OK;
+    }
+    char buf[2048];
+    int remaining = req->content_len;
+    while (remaining > 0) {
+        int want = remaining < (int)sizeof(buf) ? remaining : (int)sizeof(buf);
+        int r = httpd_req_recv(req, buf, want);
+        if (r == HTTPD_SOCK_ERR_TIMEOUT) continue;
+        if (r <= 0) {
+            ota_manager_abort();
+            httpd_resp_set_status(req, "400 Bad Request");
+            httpd_resp_sendstr(req, "Empfang abgebrochen");
+            return ESP_OK;
+        }
+        if (!ota_manager_write((const uint8_t *)buf, r)) {
+            httpd_resp_set_status(req, "500 Internal Server Error");
+            httpd_resp_sendstr(req, "Schreibfehler");
+            return ESP_OK;
+        }
+        remaining -= r;
+    }
+    if (!ota_manager_finish()) {
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_sendstr(req, "Image ungueltig");
+        return ESP_OK;
+    }
+    httpd_resp_sendstr(req, "OK");
+    ESP_LOGI(TAG, "OTA-Upload erfolgreich - Neustart");
+    vTaskDelay(pdMS_TO_TICKS(1000));   // HTTP-Antwort rausschicken lassen
+    esp_restart();
+    return ESP_OK;   // nicht erreicht
 }
 
 static esp_err_t save_post(httpd_req_t *req)
@@ -171,7 +230,9 @@ void web_server_start(void)
     }
     httpd_uri_t root = { .uri = "/", .method = HTTP_GET, .handler = root_get };
     httpd_uri_t save = { .uri = "/save", .method = HTTP_POST, .handler = save_post };
+    httpd_uri_t ota  = { .uri = "/ota", .method = HTTP_POST, .handler = ota_post };
     httpd_register_uri_handler(server, &root);
     httpd_register_uri_handler(server, &save);
+    httpd_register_uri_handler(server, &ota);
     ESP_LOGI(TAG, "HTTP-Konfig-Server gestartet (Port 80)");
 }
