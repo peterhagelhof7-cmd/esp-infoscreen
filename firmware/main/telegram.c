@@ -215,8 +215,63 @@ static void send_greeting(void)
 }
 
 // --- Befehle ----------------------------------------------------------------
+// Datum formatieren ueber Zeiger (kein format-truncation-Check auf feste Groesse).
+static void fmt_date(char *out, size_t n, int y, int m, int d)
+{
+    snprintf(out, n, "%04d-%02d-%02d", y, m, d);
+}
+
+// "neu termin <datum> <text>" -> Termin anlegen. Datum: JJJJ-MM-TT, TT.MM.JJJJ
+// oder TT.MM. (laufendes Jahr). rest zeigt hinter das Wort "termin".
+static void cmd_new_termin(const char *rest)
+{
+    while (*rest == ' ') rest++;
+    char tok[24] = { 0 };
+    int i = 0;
+    while (rest[i] && rest[i] != ' ' && i < (int)sizeof(tok) - 1) { tok[i] = rest[i]; i++; }
+    tok[i] = '\0';
+    const char *title = rest + i;
+    while (*title == ' ') title++;
+
+    char date[16] = { 0 };
+    int y = 0, m = 0, d = 0;
+    if (sscanf(tok, "%4d-%2d-%2d", &y, &m, &d) == 3) {
+        fmt_date(date, sizeof(date), y, m, d);
+    } else if (sscanf(tok, "%2d.%2d.%4d", &d, &m, &y) == 3) {
+        fmt_date(date, sizeof(date), y, m, d);
+    } else if (sscanf(tok, "%2d.%2d", &d, &m) == 2) {
+        time_t now = time(NULL); struct tm tm; localtime_r(&now, &tm);
+        fmt_date(date, sizeof(date), tm.tm_year + 1900, m, d);
+    }
+    // Plausibilitaet
+    bool ok_date = (m >= 1 && m <= 12 && d >= 1 && d <= 31 && date[0]);
+
+    char msg[240];
+    if (!ok_date || title[0] == '\0' || !termine_add(date, "", title)) {
+        snprintf(msg, sizeof(msg),
+                 "Konnte Termin nicht anlegen. Format: neu termin JJJJ-MM-TT Text");
+    } else {
+        snprintf(msg, sizeof(msg), "\xE2\x9C\x85 Termin gespeichert: %02d.%02d. %s", d, m, title);
+    }
+    telegram_send(msg);
+}
+
+// Kommandoliste ausgeben.
+static void send_help(void)
+{
+    char msg[400];
+    snprintf(msg, sizeof(msg),
+        "\xF0\x9F\xA4\x96 Kommandos (@%s ...):\n"
+        "\xE2\x80\xA2 Wetter \xE2\x80\x93 aktuelle Spessartwetter-Werte\n"
+        "\xE2\x80\xA2 internet \xE2\x80\x93 Internet-/Fritzbox-Daten\n"
+        "\xE2\x80\xA2 termin \xE2\x80\x93 die n\xC3\xA4""chsten 2 Termine\n"
+        "\xE2\x80\xA2 neu termin JJJJ-MM-TT Text \xE2\x80\x93 Termin anlegen",
+        s_botname[0] ? s_botname : "bot");
+    telegram_send(msg);
+}
+
 // Prueft, ob der Bot direkt angesprochen wurde (@username), und beantwortet
-// die Schluesselwoerter Wetter / internet / termin.
+// die Schluesselwoerter bzw. liefert die Kommandoliste.
 static void handle_command(const char *text)
 {
     if (s_botname[0] == '\0') return;
@@ -227,6 +282,14 @@ static void handle_command(const char *text)
     char mention[42];
     snprintf(mention, sizeof(mention), "@%s", s_botname);   // s_botname bereits klein
     if (!contains_ci(low, mention)) return;                 // nicht direkt angesprochen
+
+    // "neu termin <datum> <text>" hat Vorrang (enthaelt sonst "termin")
+    const char *nt = strstr(low, "neu termin");
+    if (nt) {
+        size_t pos = (size_t)(nt - low) + strlen("neu termin");
+        cmd_new_termin(text + pos);   // Originaltext (Titel behaelt Gross/Klein)
+        return;
+    }
 
     char reply[560]; bool any = false;
     reply[0] = '\0'; size_t o = 0;
@@ -242,9 +305,8 @@ static void handle_command(const char *text)
         char b[200]; build_termine(b, sizeof(b));
         o += snprintf(reply + o, sizeof(reply) - o, "%s%s", any ? "\n" : "", b); any = true;
     }
-    if (!any)
-        snprintf(reply, sizeof(reply), "Ich verstehe: \"Wetter\", \"internet\", \"termin\".");
-    telegram_send(reply);
+    if (!any) send_help();          // Erwaehnung ohne Kommando -> Hilfe
+    else      telegram_send(reply);
 }
 
 // --- getMe (Bot-Username ermitteln) ----------------------------------------
