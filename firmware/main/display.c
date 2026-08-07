@@ -32,11 +32,14 @@ lv_display_t *display_init(void)
         .vsync_gpio_num = DISP_PIN_VSYNC,
         .hsync_gpio_num = DISP_PIN_HSYNC,
         .disp_gpio_num = DISP_PIN_DISP,
-        // Datenreihenfolge: RGB565 low->high = Blau, Gruen, Rot
+        // Datenreihenfolge: auf ECHTER HW verifiziert (2026-08-07) — mit der
+        // Reihenfolge Blau,Gruen,Rot waren Rot und Blau vertauscht (Gruen ok).
+        // Dieses Board/Panel erwartet die R-Pins auf den niedrigen Datenbits:
+        // low->high = Rot, Gruen, Blau.
         .data_gpio_nums = {
-            DISP_PIN_B0, DISP_PIN_B1, DISP_PIN_B2, DISP_PIN_B3, DISP_PIN_B4,
-            DISP_PIN_G0, DISP_PIN_G1, DISP_PIN_G2, DISP_PIN_G3, DISP_PIN_G4, DISP_PIN_G5,
             DISP_PIN_R0, DISP_PIN_R1, DISP_PIN_R2, DISP_PIN_R3, DISP_PIN_R4,
+            DISP_PIN_G0, DISP_PIN_G1, DISP_PIN_G2, DISP_PIN_G3, DISP_PIN_G4, DISP_PIN_G5,
+            DISP_PIN_B0, DISP_PIN_B1, DISP_PIN_B2, DISP_PIN_B3, DISP_PIN_B4,
         },
         .timings = {
             .pclk_hz = DISP_PCLK_HZ,
