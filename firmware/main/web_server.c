@@ -3,6 +3,8 @@
 #include "ota_manager.h"
 #include "config_store.h"
 #include "termine.h"
+#include "display.h"
+#include "slides.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -122,7 +124,8 @@ static esp_err_t root_get(httpd_req_t *req)
     httpd_resp_sendstr_chunk(req,
         "</select>"
         "<label>Passwort</label><input type=password name=pass placeholder='WLAN-Passwort'>"
-        "<button type=submit>Speichern &amp; Neustart</button></form>");
+        "<button type=submit>Speichern &amp; Neustart</button></form>"
+        "<a href=/ style='display:block;text-align:center;color:#8ab4f8;margin-top:10px;font-size:13px'>Netzwerke neu suchen</a>");
 
     char st_line[128];
     const char *modestr = (st.mode == NET_MODE_STA_CONNECTED) ? "verbunden"
@@ -133,19 +136,52 @@ static esp_err_t root_get(httpd_req_t *req)
     httpd_resp_sendstr_chunk(req, st_line);
     httpd_resp_sendstr_chunk(req, "</div>");   // WLAN-Card schliessen
 
-    // --- Anzeige-Card (180-Grad-Drehung) ---
-    char rot[4];
-    bool rotated = config_get_str("rot180", rot, sizeof(rot)) && rot[0] == '1';
-    char disp_card[420];
-    snprintf(disp_card, sizeof(disp_card),
-        "<div class=card style='margin-top:16px'>"
-        "<h1>Anzeige</h1><div class=sub>Ausrichtung (Neustart)</div>"
-        "<form method=post action=/display>"
+    // --- Geraet-Card (Name) ---
+    char devname[32]; config_get_str_def("dev_name", devname, sizeof(devname), "esp-infoscreen");
+    char dvesc[64]; html_escape(devname, dvesc, sizeof(dvesc));
+    char dev_card[360];
+    snprintf(dev_card, sizeof(dev_card),
+        "<div class=card style='margin-top:16px'><h1>Geraet</h1><div class=sub>Name (Neustart)</div>"
+        "<form method=post action=/device><input type=text name=name maxlength=31 value=\"%s\">"
+        "<button type=submit>Speichern</button></form></div>", dvesc);
+    httpd_resp_sendstr_chunk(req, dev_card);
+
+    // --- Anzeige-Card: Helligkeit + Drehung + Slide-Auswahl + Intervall ---
+    int bright = config_get_int("brightness", 100);
+    int slide_sec = config_get_int("slide_sec", 10);
+    char rot[4]; bool rotated = config_get_str("rot180", rot, sizeof(rot)) && rot[0] == '1';
+    char an1[720];
+    snprintf(an1, sizeof(an1),
+        "<div class=card style='margin-top:16px'><h1>Anzeige</h1>"
+        "<form method=post action=/brightness>"
+        "<label>Helligkeit: %d%%</label>"
+        "<input type=range name=b min=5 max=100 value=%d oninput=\"this.previousElementSibling.textContent='Helligkeit: '+this.value+'%%'\">"
+        "<button type=submit>Uebernehmen</button></form>"
+        "<form method=post action=/display style='margin-top:8px'>"
         "<label style='display:flex;align-items:center;gap:10px'>"
-        "<input type=checkbox name=rot value=1 %s style='width:auto'> Anzeige um 180&deg; drehen</label>"
-        "<button type=submit>Uebernehmen</button></form></div>",
-        rotated ? "checked" : "");
-    httpd_resp_sendstr_chunk(req, disp_card);
+        "<input type=checkbox name=rot value=1 %s style='width:auto'> Um 180&deg; drehen (Neustart)</label>"
+        "<button type=submit>Uebernehmen</button></form>",
+        bright, bright, rotated ? "checked" : "");
+    httpd_resp_sendstr_chunk(req, an1);
+
+    httpd_resp_sendstr_chunk(req,
+        "<form method=post action=/slides style='margin-top:8px'>"
+        "<label>Angezeigte Slides</label>");
+    for (int i = 0; i < slides_catalog_count(); i++) {
+        char te[48]; html_escape(slides_catalog_title(i), te, sizeof(te));
+        char row[224];
+        snprintf(row, sizeof(row),
+            "<label style='display:flex;align-items:center;gap:10px;margin:4px 0'>"
+            "<input type=checkbox name=s_%s value=1 %s style='width:auto'> %s</label>",
+            slides_catalog_id(i), slides_catalog_enabled(i) ? "checked" : "", te);
+        httpd_resp_sendstr_chunk(req, row);
+    }
+    char iv[220];
+    snprintf(iv, sizeof(iv),
+        "<label>Wechsel alle (Sekunden)</label>"
+        "<input type=number name=sec min=3 max=120 value=%d>"
+        "<button type=submit>Speichern &amp; Neustart</button></form></div>", slide_sec);
+    httpd_resp_sendstr_chunk(req, iv);
 
     // --- Termine-Card (anlegen / loeschen) ---
     httpd_resp_sendstr_chunk(req,
@@ -192,19 +228,26 @@ static esp_err_t root_get(httpd_req_t *req)
         fbesc);
     httpd_resp_sendstr_chunk(req, fb_card);
 
-    // --- OpenWeatherMap-Card (API-Key) ---
+    // --- OpenWeatherMap-Card (API-Key + Standort) ---
     char owmkey[48] = { 0 };
     bool has_key = config_get_str("owm_key", owmkey, sizeof(owmkey)) && owmkey[0];
-    char owm_card[420];
+    char owmloc[64] = { 0 };
+    config_get_str("owm_loc", owmloc, sizeof(owmloc));
+    char owmloc_esc[80]; html_escape(owmloc, owmloc_esc, sizeof(owmloc_esc));
+    char owm_card[640];
     snprintf(owm_card, sizeof(owm_card),
         "<div class=card style='margin-top:16px'>"
-        "<h1>Wetter</h1><div class=sub>OpenWeatherMap API-Key</div>"
+        "<h1>Wetter</h1><div class=sub>OpenWeatherMap</div>"
         "<form method=post action=/owm>"
+        "<label>API-Key</label>"
         "<input type=text name=key placeholder='%s' autocomplete=off>"
+        "<label>Standort (leer = Johannesberg)</label>"
+        "<input type=text name=loc value=\"%s\" placeholder='z.B. Aschaffenburg,DE'>"
         "<button type=submit>Speichern</button></form>"
         "<div class=st>Kostenloser Key von openweathermap.org. %s</div></div>",
         has_key ? "gesetzt - zum Aendern neuen Key eingeben" : "noch nicht gesetzt",
-        has_key ? "Aktuell konfiguriert." : "");
+        owmloc_esc,
+        has_key ? "Key aktuell konfiguriert." : "");
     httpd_resp_sendstr_chunk(req, owm_card);
 
     // --- Firmware-Update-Card (OTA) ---
@@ -219,6 +262,29 @@ static esp_err_t root_get(httpd_req_t *req)
         "if(!f){alert('Bitte eine .bin-Datei waehlen');return;}"
         "var s=document.getElementById('ost');var x=new XMLHttpRequest();x.open('POST','/ota');"
         "x.upload.onprogress=function(e){if(e.lengthComputable)s.textContent='Hochladen... '+Math.round(e.loaded/e.total*100)+'%';};"
+        "x.onload=function(){s.textContent=(x.status==200)?'OK - Geraet startet neu.':'Fehler: '+x.responseText;};"
+        "x.onerror=function(){s.textContent='Upload-Fehler';};x.send(f);}"
+        "</script>");
+
+    // --- System-Card (Einstellungen laden/speichern, Werksreset, Neustart) ---
+    httpd_resp_sendstr_chunk(req,
+        "<div class=card style='margin-top:16px'><h1>System</h1>"
+        "<a href=/config/download style='display:block;text-align:center;padding:12px;margin-top:8px;"
+        "border-radius:8px;background:#3b6ef0;color:#fff;text-decoration:none'>Einstellungen herunterladen</a>"
+        "<label>Einstellungen laden (.json)</label>"
+        "<input type=file id=cf accept='.json,application/json'>"
+        "<button onclick='cu()'>Hochladen &amp; Neustart</button>"
+        "<div class=st id=cst></div>"
+        "<form method=post action=/reboot style='margin-top:16px'>"
+        "<button type=submit style='background:#5a6478'>Neustart</button></form>"
+        "<form method=post action=/factory style='margin-top:16px'>"
+        "<label>Werksreset - zur Bestaetigung Geraetenamen eingeben</label>"
+        "<input type=text name=confirm placeholder='Geraetename' autocomplete=off>"
+        "<button type=submit style='background:#a33a3a'>Werksreset &amp; Neustart</button></form></div>"
+        "<script>"
+        "function cu(){var f=document.getElementById('cf').files[0];"
+        "if(!f){alert('Bitte eine .json-Datei waehlen');return;}"
+        "var s=document.getElementById('cst');var x=new XMLHttpRequest();x.open('POST','/config/upload');"
         "x.onload=function(){s.textContent=(x.status==200)?'OK - Geraet startet neu.':'Fehler: '+x.responseText;};"
         "x.onerror=function(){s.textContent='Upload-Fehler';};x.send(f);}"
         "</script>");
@@ -296,12 +362,131 @@ static esp_err_t owm_post(httpd_req_t *req)
     if (recvd < 0) return ESP_FAIL;
     body[recvd > 0 ? recvd : 0] = '\0';
 
-    char key[48] = { 0 };
+    char key[48] = { 0 }, loc[64] = { 0 };
     if (form_field(body, "key", key, sizeof(key)) && key[0]) {
         config_set_str("owm_key", key);   // nur bei nicht-leerer Eingabe ueberschreiben
         ESP_LOGI(TAG, "OpenWeatherMap-Key gesetzt");
     }
+    form_field(body, "loc", loc, sizeof(loc));
+    config_set_str("owm_loc", loc);       // leer = Standort Johannesberg
     return redirect_root(req);
+}
+
+static esp_err_t device_post(httpd_req_t *req)
+{
+    char body[128];
+    int t = req->content_len < (int)sizeof(body) - 1 ? req->content_len : (int)sizeof(body) - 1;
+    int r = t > 0 ? httpd_req_recv(req, body, t) : 0;
+    if (r < 0) return ESP_FAIL;
+    body[r > 0 ? r : 0] = '\0';
+    char name[32] = { 0 };
+    if (form_field(body, "name", name, sizeof(name)) && name[0]) config_set_str("dev_name", name);
+    // Hostname wird beim Start gesetzt -> Neustart
+    httpd_resp_sendstr(req, "Gespeichert. Neustart ...");
+    vTaskDelay(pdMS_TO_TICKS(600));
+    esp_restart();
+    return ESP_OK;
+}
+
+static esp_err_t brightness_post(httpd_req_t *req)
+{
+    char body[64];
+    int t = req->content_len < (int)sizeof(body) - 1 ? req->content_len : (int)sizeof(body) - 1;
+    int r = t > 0 ? httpd_req_recv(req, body, t) : 0;
+    if (r < 0) return ESP_FAIL;
+    body[r > 0 ? r : 0] = '\0';
+    char b[8] = { 0 };
+    if (form_field(body, "b", b, sizeof(b))) {
+        int pct = atoi(b);
+        if (pct < 5) pct = 5;
+        if (pct > 100) pct = 100;
+        config_set_int("brightness", pct);
+        display_set_brightness(pct);   // sofort anwenden
+    }
+    return redirect_root(req);
+}
+
+static esp_err_t slides_post(httpd_req_t *req)
+{
+    char body[512];
+    int t = req->content_len < (int)sizeof(body) - 1 ? req->content_len : (int)sizeof(body) - 1;
+    int r = t > 0 ? httpd_req_recv(req, body, t) : 0;
+    if (r < 0) return ESP_FAIL;
+    body[r > 0 ? r : 0] = '\0';
+
+    // Fuer jede Slide: aktiviert, wenn ihr Checkbox-Feld "s_<id>" vorhanden ist.
+    char tmp[8];
+    for (int i = 0; i < slides_catalog_count(); i++) {
+        char field[16]; snprintf(field, sizeof(field), "s_%s", slides_catalog_id(i));
+        bool on = form_field(body, field, tmp, sizeof(tmp));
+        char key[16]; snprintf(key, sizeof(key), "sl_%s", slides_catalog_id(i));
+        config_set_str(key, on ? "1" : "0");
+    }
+    char sec[8] = { 0 };
+    if (form_field(body, "sec", sec, sizeof(sec)) && sec[0]) config_set_int("slide_sec", atoi(sec));
+
+    httpd_resp_sendstr(req, "Gespeichert. Neustart ...");
+    vTaskDelay(pdMS_TO_TICKS(600));
+    esp_restart();
+    return ESP_OK;
+}
+
+static esp_err_t configdl_get(httpd_req_t *req)
+{
+    static char buf[4096];
+    int n = config_export_json(buf, sizeof(buf));
+    if (n < 0) { httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Export fehlgeschlagen"); return ESP_OK; }
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Content-Disposition", "attachment; filename=\"esp-infoscreen-config.json\"");
+    httpd_resp_send(req, buf, n);
+    return ESP_OK;
+}
+
+static esp_err_t configul_post(httpd_req_t *req)
+{
+    static char buf[4096];
+    int total = req->content_len < (int)sizeof(buf) - 1 ? req->content_len : (int)sizeof(buf) - 1;
+    int recvd = httpd_req_recv(req, buf, total);
+    if (recvd <= 0) return ESP_FAIL;
+    buf[recvd] = '\0';
+    bool ok = config_import_json(buf);
+    if (!ok) { httpd_resp_set_status(req, "400 Bad Request"); httpd_resp_sendstr(req, "Ungueltiges JSON"); return ESP_OK; }
+    httpd_resp_sendstr(req, "OK");
+    ESP_LOGI(TAG, "Einstellungen importiert - Neustart");
+    vTaskDelay(pdMS_TO_TICKS(800));
+    esp_restart();
+    return ESP_OK;
+}
+
+static esp_err_t reboot_post(httpd_req_t *req)
+{
+    httpd_resp_sendstr(req, "Neustart ...");
+    vTaskDelay(pdMS_TO_TICKS(500));
+    esp_restart();
+    return ESP_OK;
+}
+
+static esp_err_t factory_post(httpd_req_t *req)
+{
+    char body[128];
+    int t = req->content_len < (int)sizeof(body) - 1 ? req->content_len : (int)sizeof(body) - 1;
+    int r = t > 0 ? httpd_req_recv(req, body, t) : 0;
+    if (r < 0) return ESP_FAIL;
+    body[r > 0 ? r : 0] = '\0';
+
+    char confirm[32] = { 0 }, name[32];
+    form_field(body, "confirm", confirm, sizeof(confirm));
+    config_get_str_def("dev_name", name, sizeof(name), "esp-infoscreen");
+    if (strcmp(confirm, name) != 0) {
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_sendstr(req, "Geraetename stimmt nicht - Werksreset abgebrochen.");
+        return ESP_OK;
+    }
+    config_clear();
+    httpd_resp_sendstr(req, "Werksreset. Neustart ...");
+    vTaskDelay(pdMS_TO_TICKS(600));
+    esp_restart();
+    return ESP_OK;
 }
 
 static esp_err_t fritzbox_post(httpd_req_t *req)
@@ -394,7 +579,7 @@ void web_server_start(void)
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.lru_purge_enable = true;
     cfg.stack_size = 8192;
-    cfg.max_uri_handlers = 12;
+    cfg.max_uri_handlers = 20;
     httpd_handle_t server = NULL;
     if (httpd_start(&server, &cfg) != ESP_OK) {
         ESP_LOGE(TAG, "HTTP-Server-Start fehlgeschlagen");
@@ -408,6 +593,13 @@ void web_server_start(void)
     httpd_uri_t tadd = { .uri = "/tadd", .method = HTTP_POST, .handler = tadd_post };
     httpd_uri_t tdel = { .uri = "/tdel", .method = HTTP_POST, .handler = tdel_post };
     httpd_uri_t owm  = { .uri = "/owm", .method = HTTP_POST, .handler = owm_post };
+    httpd_uri_t dev  = { .uri = "/device", .method = HTTP_POST, .handler = device_post };
+    httpd_uri_t brg  = { .uri = "/brightness", .method = HTTP_POST, .handler = brightness_post };
+    httpd_uri_t sld  = { .uri = "/slides", .method = HTTP_POST, .handler = slides_post };
+    httpd_uri_t cdl  = { .uri = "/config/download", .method = HTTP_GET, .handler = configdl_get };
+    httpd_uri_t cul  = { .uri = "/config/upload", .method = HTTP_POST, .handler = configul_post };
+    httpd_uri_t rbt  = { .uri = "/reboot", .method = HTTP_POST, .handler = reboot_post };
+    httpd_uri_t fac  = { .uri = "/factory", .method = HTTP_POST, .handler = factory_post };
     httpd_register_uri_handler(server, &root);
     httpd_register_uri_handler(server, &save);
     httpd_register_uri_handler(server, &ota);
@@ -416,5 +608,12 @@ void web_server_start(void)
     httpd_register_uri_handler(server, &tadd);
     httpd_register_uri_handler(server, &tdel);
     httpd_register_uri_handler(server, &owm);
+    httpd_register_uri_handler(server, &dev);
+    httpd_register_uri_handler(server, &brg);
+    httpd_register_uri_handler(server, &sld);
+    httpd_register_uri_handler(server, &cdl);
+    httpd_register_uri_handler(server, &cul);
+    httpd_register_uri_handler(server, &rbt);
+    httpd_register_uri_handler(server, &fac);
     ESP_LOGI(TAG, "HTTP-Konfig-Server gestartet (Port 80)");
 }

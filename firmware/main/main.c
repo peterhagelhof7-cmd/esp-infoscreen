@@ -30,6 +30,7 @@ void app_main(void)
     char rot[4];
     bool rot180 = config_get_str("rot180", rot, sizeof(rot)) && rot[0] == '1';
     lv_display_t *disp = display_init(rot180);
+    display_set_brightness(config_get_int("brightness", 100));   // gespeicherte Helligkeit
 
     // Netzwerk VOR den Slides (Slides fragen Netzwerkstatus ab)
     network_manager_init();
@@ -44,7 +45,10 @@ void app_main(void)
     // Slideshow aufbauen: Uhr/Datum, Netzwerk, WLAN-Empfang - alle 10 s wechseln
     slideshow_init(disp);
     slides_register_all();
-    slideshow_start(10000);
+    int sec = config_get_int("slide_sec", 10);
+    if (sec < 3) sec = 3;
+    if (sec > 120) sec = 120;
+    slideshow_start((uint32_t)sec * 1000);
 
     // Web-Konfig + OTA
     web_server_start();

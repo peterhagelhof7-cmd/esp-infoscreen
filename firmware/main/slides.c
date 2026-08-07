@@ -8,6 +8,7 @@
 #include "dwd.h"
 #include "spessart.h"
 #include "owm.h"
+#include "config_store.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -91,7 +92,7 @@ static void clock_build(lv_obj_t *p)
     clock_update();
 }
 
-static const slide_t SLIDE_CLOCK = { "Uhrzeit & Datum", clock_build, clock_update };
+static const slide_t SLIDE_CLOCK = { "clock", "Uhrzeit & Datum", clock_build, clock_update };
 
 // ===================== Slide: Wetter (OpenWeatherMap) ========================
 // Obere Haelfte: aktuelle Werte. Untere Haelfte: 3 gleich grosse Zellen
@@ -175,7 +176,7 @@ static void owm_build(lv_obj_t *p)
     }
 }
 
-static const slide_t SLIDE_OWM = { "Wetter Johannesberg", owm_build, NULL };
+static const slide_t SLIDE_OWM = { "owm", "Wetter Johannesberg", owm_build, NULL };
 
 // ========================= Slide 2: Netzwerk / IP ============================
 // Aktualisiert nur bei Zustandswechsel (LVGL zeichnet gleichen Text ohnehin
@@ -230,7 +231,7 @@ static void network_build(lv_obj_t *p)
     network_update();
 }
 
-static const slide_t SLIDE_NETWORK = { "Netzwerk", network_build, network_update };
+static const slide_t SLIDE_NETWORK = { "net", "Netzwerk", network_build, network_update };
 
 // ========================== Slide 3: WLAN-Empfang ============================
 // Zeigt den ueber die letzten ~20 s (= die 2 vorherigen Slides) gemittelten
@@ -278,7 +279,7 @@ static void wifi_build(lv_obj_t *p)
     lv_label_set_text(note, "Mittelwert der letzten 20 s");
 }
 
-static const slide_t SLIDE_WIFI = { "WLAN-Empfang", wifi_build, NULL };
+static const slide_t SLIDE_WIFI = { "wifi", "WLAN-Empfang", wifi_build, NULL };
 
 // ========================== Slide 4: Fritzbox / Internet =====================
 // Externe IP + Auslastung (aktuell / max). Aktualisiert waehrend sichtbar (die
@@ -337,7 +338,7 @@ static void fritzbox_build(lv_obj_t *p)
     fritzbox_update();
 }
 
-static const slide_t SLIDE_FRITZBOX = { "Internet (Fritzbox)", fritzbox_build, fritzbox_update };
+static const slide_t SLIDE_FRITZBOX = { "fritz", "Internet (Fritzbox)", fritzbox_build, fritzbox_update };
 
 // ===================== Slide 5: Termine / Kalender ===========================
 // Naechste 5 Ereignisse = Nutzer-Termine + Muellabfuhr, nach Datum sortiert.
@@ -417,7 +418,7 @@ static void calendar_build(lv_obj_t *p)
     }
 }
 
-static const slide_t SLIDE_CALENDAR = { "Termine", calendar_build, NULL };
+static const slide_t SLIDE_CALENDAR = { "cal", "Termine", calendar_build, NULL };
 
 // ======================= Slide 6: Wetterwarnung (DWD) ========================
 static void dwd_build(lv_obj_t *p)
@@ -450,7 +451,7 @@ static void dwd_build(lv_obj_t *p)
     lv_obj_align(l1, LV_ALIGN_CENTER, 0, 0);
 }
 
-static const slide_t SLIDE_DWD = { "Wetterwarnung (DWD)", dwd_build, NULL };
+static const slide_t SLIDE_DWD = { "dwd", "Wetterwarnung (DWD)", dwd_build, NULL };
 
 // ==================== Slide 7: Spessartwetter (Temp/Wind) ====================
 static void spessart_build(lv_obj_t *p)
@@ -481,17 +482,34 @@ static void spessart_build(lv_obj_t *p)
     lv_obj_align(lw, LV_ALIGN_CENTER, 0, 40);
 }
 
-static const slide_t SLIDE_SPESSART = { "Spessartwetter", spessart_build, NULL };
+static const slide_t SLIDE_SPESSART = { "spessart", "Spessartwetter", spessart_build, NULL };
 
 // ============================================================================
+// Katalog aller Slides (Reihenfolge = Anzeigereihenfolge).
+static const slide_t *ALL_SLIDES[] = {
+    &SLIDE_CLOCK, &SLIDE_OWM, &SLIDE_CALENDAR, &SLIDE_DWD,
+    &SLIDE_SPESSART, &SLIDE_FRITZBOX, &SLIDE_NETWORK, &SLIDE_WIFI,
+};
+#define N_SLIDES (int)(sizeof(ALL_SLIDES) / sizeof(ALL_SLIDES[0]))
+
+// Slide aktiviert? Config-Schluessel "sl_<id>", Default an ("1").
+static bool slide_on(const char *id)
+{
+    char key[16]; snprintf(key, sizeof(key), "sl_%s", id);
+    char v[4]; config_get_str_def(key, v, sizeof(v), "1");
+    return v[0] != '0';
+}
+
 void slides_register_all(void)
 {
-    slideshow_add(&SLIDE_CLOCK);
-    slideshow_add(&SLIDE_OWM);
-    slideshow_add(&SLIDE_CALENDAR);
-    slideshow_add(&SLIDE_DWD);
-    slideshow_add(&SLIDE_SPESSART);
-    slideshow_add(&SLIDE_FRITZBOX);
-    slideshow_add(&SLIDE_NETWORK);
-    slideshow_add(&SLIDE_WIFI);
+    int added = 0;
+    for (int i = 0; i < N_SLIDES; i++) {
+        if (slide_on(ALL_SLIDES[i]->id)) { slideshow_add(ALL_SLIDES[i]); added++; }
+    }
+    if (added == 0) slideshow_add(&SLIDE_CLOCK);   // niemals leer
 }
+
+int         slides_catalog_count(void)        { return N_SLIDES; }
+const char *slides_catalog_id(int i)          { return (i >= 0 && i < N_SLIDES) ? ALL_SLIDES[i]->id : ""; }
+const char *slides_catalog_title(int i)       { return (i >= 0 && i < N_SLIDES) ? ALL_SLIDES[i]->title : ""; }
+bool        slides_catalog_enabled(int i)     { return (i >= 0 && i < N_SLIDES) ? slide_on(ALL_SLIDES[i]->id) : false; }

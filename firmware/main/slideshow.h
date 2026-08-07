@@ -6,6 +6,7 @@
 // waehrend er aktiv ist einmal pro Sekunde aktualisiert werden (update).
 
 typedef struct {
+    const char *id;                    // stabile Kennung fuer die Ein/Aus-Konfig
     const char *title;                 // Ueberschrift oben
     void (*build)(lv_obj_t *parent);   // Inhalt in parent aufbauen (bei jedem Anzeigen)
     void (*update)(void);              // optional: jede Sekunde waehrend aktiv (kann NULL sein)

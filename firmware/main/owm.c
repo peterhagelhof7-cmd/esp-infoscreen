@@ -13,8 +13,9 @@
 #include "esp_log.h"
 
 static const char *TAG = "owm";
-#define CUR_URL "https://api.openweathermap.org/data/2.5/weather?lat=50.008&lon=9.216&units=metric&lang=de&appid=%s"
-#define FC_URL  "https://api.openweathermap.org/data/2.5/forecast?lat=50.008&lon=9.216&units=metric&lang=de&appid=%s"
+#define CUR_URL "https://api.openweathermap.org/data/2.5/weather?%s&units=metric&lang=de&appid=%s"
+#define FC_URL  "https://api.openweathermap.org/data/2.5/forecast?%s&units=metric&lang=de&appid=%s"
+#define DEFAULT_LOC "lat=50.008&lon=9.216"   // Johannesberg
 #define POLL_INTERVAL_MS   (20 * 60 * 1000)   // aktuelle Werte: 20 min -> 72/Tag
 #define FC_EVERY_N_POLLS    9                  // Vorhersage jede 9. Runde -> ~3 h -> 8/Tag
 
@@ -29,6 +30,29 @@ static int iround(double v) { return (int)(v >= 0 ? v + 0.5 : v - 0.5); }
 static bool get_key(char *key, size_t len)
 {
     return config_get_str("owm_key", key, len) && key[0] != '\0';
+}
+
+// Standort-Teil der URL: Config "owm_loc" (Ortsname) URL-kodiert als q=..., sonst
+// die Johannesberg-Default-Koordinaten.
+static void loc_part(char *out, size_t len)
+{
+    char loc[64];
+    if (!config_get_str("owm_loc", loc, sizeof(loc)) || loc[0] == '\0') {
+        snprintf(out, len, DEFAULT_LOC);
+        return;
+    }
+    size_t o = 0;
+    o += snprintf(out, len, "q=");
+    for (size_t i = 0; loc[i] && o + 4 < len; i++) {
+        unsigned char c = (unsigned char)loc[i];
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') || c == ',' || c == '.' || c == '-') {
+            out[o++] = (char)c;
+        } else {
+            o += snprintf(out + o, len - o, "%%%02X", c);   // URL-kodieren (Leerzeichen/Umlaute)
+        }
+    }
+    out[o] = '\0';
 }
 
 // Datum (YYYY-MM-DD) + Wochentag fuer n Tage in der Zukunft.
@@ -53,7 +77,8 @@ static void poll_current(void)
         return;
     }
 
-    char url[256]; snprintf(url, sizeof(url), CUR_URL, key);
+    char loc[96]; loc_part(loc, sizeof(loc));
+    char url[320]; snprintf(url, sizeof(url), CUR_URL, loc, key);
     static char buf[4096];
     bool valid = false;
     char desc[48] = { 0 };
@@ -104,7 +129,8 @@ static void poll_forecast(void)
     char key[40];
     if (!get_key(key, sizeof(key))) return;
 
-    char url[256]; snprintf(url, sizeof(url), FC_URL, key);
+    char loc[96]; loc_part(loc, sizeof(loc));
+    char url[320]; snprintf(url, sizeof(url), FC_URL, loc, key);
     char *buf = heap_caps_malloc(32768, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!buf) buf = malloc(32768);
     if (!buf) return;

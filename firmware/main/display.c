@@ -2,6 +2,7 @@
 #include "board_config.h"
 
 #include "driver/gpio.h"
+#include "driver/ledc.h"
 #include "esp_lcd_panel_rgb.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lvgl_port.h"
@@ -9,15 +10,39 @@
 
 static const char *TAG = "display";
 
+#define BL_TIMER   LEDC_TIMER_0
+#define BL_CHANNEL LEDC_CHANNEL_0
+#define BL_RES     LEDC_TIMER_10_BIT   // 0..1023
+
+void display_set_brightness(int percent)
+{
+    if (percent < 0) percent = 0;
+    if (percent > 100) percent = 100;
+    uint32_t duty = (uint32_t)percent * 1023 / 100;
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, BL_CHANNEL, duty);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, BL_CHANNEL);
+}
+
 lv_display_t *display_init(bool rot180)
 {
-    // --- Hintergrundbeleuchtung erst mal aus (bis Panel initialisiert) ---
-    gpio_config_t bk_cfg = {
-        .mode = GPIO_MODE_OUTPUT,
-        .pin_bit_mask = 1ULL << DISP_PIN_BCKL,
+    // --- Hintergrundbeleuchtung per PWM (LEDC), erst mal aus ---
+    ledc_timer_config_t bl_timer = {
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .duty_resolution = BL_RES,
+        .timer_num = BL_TIMER,
+        .freq_hz = 5000,
+        .clk_cfg = LEDC_AUTO_CLK,
     };
-    ESP_ERROR_CHECK(gpio_config(&bk_cfg));
-    gpio_set_level(DISP_PIN_BCKL, 0);
+    ESP_ERROR_CHECK(ledc_timer_config(&bl_timer));
+    ledc_channel_config_t bl_ch = {
+        .gpio_num = DISP_PIN_BCKL,
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .channel = BL_CHANNEL,
+        .timer_sel = BL_TIMER,
+        .duty = 0,
+        .hpoint = 0,
+    };
+    ESP_ERROR_CHECK(ledc_channel_config(&bl_ch));
 
     // --- RGB-Panel anlegen (verifizierte Pins/Timings aus board_config.h) ---
     ESP_LOGI(TAG, "Erzeuge RGB-Panel %dx%d", DISP_H_RES, DISP_V_RES);
@@ -109,8 +134,9 @@ lv_display_t *display_init(bool rot180)
     };
     lv_display_t *disp = lvgl_port_add_disp_rgb(&disp_cfg, &rgb_cfg);
 
-    // --- Hintergrundbeleuchtung an ---
-    gpio_set_level(DISP_PIN_BCKL, 1);
+    // --- Hintergrundbeleuchtung an (volle Helligkeit; main setzt ggf. den
+    //     gespeicherten Wert danach) ---
+    display_set_brightness(100);
     ESP_LOGI(TAG, "Display bereit (Drehung: %s)", rot180 ? "180 Grad" : "0 Grad");
     return disp;
 }

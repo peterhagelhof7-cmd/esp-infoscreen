@@ -6,3 +6,6 @@
 // Die Drehung wird beim Init festgelegt (HW-State des RGB-Panels); ein Wechsel
 // zur Laufzeit erfordert einen Neustart. Liefert die LVGL-Display-Instanz.
 lv_display_t *display_init(bool rot180);
+
+// Hintergrundbeleuchtung 0..100 % (per PWM). Wirkt sofort.
+void display_set_brightness(int percent);
