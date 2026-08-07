@@ -12,6 +12,7 @@
 #include "dwd.h"
 #include "spessart.h"
 #include "owm.h"
+#include "telegram.h"
 
 #include "esp_log.h"
 #include "esp_psram.h"
@@ -41,6 +42,7 @@ void app_main(void)
     dwd_init();        // Bright Sky (DWD-Warnungen)
     spessart_init();   // spessartwetter.de
     owm_init();        // OpenWeatherMap
+    telegram_init();   // Telegram-Bot / Message Board
 
     // Slideshow aufbauen: Uhr/Datum, Netzwerk, WLAN-Empfang - alle 10 s wechseln
     slideshow_init(disp);

@@ -8,6 +8,7 @@
 #include "dwd.h"
 #include "spessart.h"
 #include "owm.h"
+#include "telegram.h"
 #include "config_store.h"
 
 #include <stdio.h>
@@ -39,6 +40,7 @@ static void de_ascii(const char *in, char *out, size_t out_len)
 // Groesste eingebaute LVGL-Schrift = Montserrat 48. Fuer die "Helden"-Werte.
 #define FONT_BIG   (&lv_font_montserrat_48)
 #define FONT_MED   (&lv_font_montserrat_28)
+#define FONT_SM    (&lv_font_montserrat_14)
 
 // ============================ Slide 1: Uhr / Datum ===========================
 // Ohne Sekunden: nur bei Minutenwechsel neu zeichnen -> kaum Neuzeichnungen
@@ -484,11 +486,70 @@ static void spessart_build(lv_obj_t *p)
 
 static const slide_t SLIDE_SPESSART = { "spessart", "Spessartwetter", spessart_build, NULL };
 
+// ==================== Slide 9: Message Board (Telegram) =====================
+// Zeigt den Chatverlauf der konfigurierten Telegram-Gruppe. Wird nur neu
+// gezeichnet, wenn sich der Verlauf geaendert hat (Versionszaehler).
+static lv_obj_t *mb_label;
+static unsigned mb_last_ver = (unsigned)-1;
+
+static void msgboard_render(void)
+{
+    if (!mb_label) return;
+    static tg_msg_t msgs[TG_MAX_MSGS];   // laeuft nur im LVGL-Task (nicht reentrant)
+    int n = telegram_get_history(msgs, TG_MAX_MSGS);
+
+    if (!telegram_configured()) {
+        lv_label_set_text(mb_label, "Telegram nicht konfiguriert.\n"
+                                    "Token und Gruppen-ID im Webinterface hinterlegen.");
+        lv_obj_set_style_text_color(mb_label, lv_color_hex(0xb0b8d0), 0);
+        return;
+    }
+    if (n == 0) {
+        lv_label_set_text(mb_label, "Noch keine Nachrichten.");
+        lv_obj_set_style_text_color(mb_label, lv_color_hex(0xb0b8d0), 0);
+        return;
+    }
+
+    static char text[2600];
+    int start = n > 12 ? n - 12 : 0;   // die letzten bis zu 12 Zeilen
+    size_t o = 0;
+    for (int i = start; i < n && o + 4 < sizeof(text); i++) {
+        char fr[24], tx[200];
+        de_ascii(msgs[i].from, fr, sizeof(fr));
+        de_ascii(msgs[i].text, tx, sizeof(tx));
+        o += snprintf(text + o, sizeof(text) - o, "%s%s: %s", i > start ? "\n" : "", fr, tx);
+    }
+    lv_obj_set_style_text_color(mb_label, lv_color_hex(0xe6e6e6), 0);
+    lv_label_set_text(mb_label, text);
+}
+
+static void msgboard_update(void)
+{
+    unsigned v = telegram_history_version();
+    if (v == mb_last_ver) return;   // nichts Neues -> nicht neu zeichnen
+    mb_last_ver = v;
+    msgboard_render();
+}
+
+static void msgboard_build(lv_obj_t *p)
+{
+    mb_label = lv_label_create(p);
+    lv_obj_set_style_text_font(mb_label, FONT_SM, 0);
+    lv_obj_set_width(mb_label, 760);
+    lv_label_set_long_mode(mb_label, LV_LABEL_LONG_WRAP);
+    lv_obj_align(mb_label, LV_ALIGN_TOP_LEFT, 16, 4);
+    mb_last_ver = (unsigned)-1;      // beim naechsten update erzwingen
+    msgboard_update();
+}
+
+static const slide_t SLIDE_MSGBOARD = { "msg", "Message Board", msgboard_build, msgboard_update };
+
 // ============================================================================
 // Katalog aller Slides (Reihenfolge = Anzeigereihenfolge).
 static const slide_t *ALL_SLIDES[] = {
     &SLIDE_CLOCK, &SLIDE_OWM, &SLIDE_CALENDAR, &SLIDE_DWD,
     &SLIDE_SPESSART, &SLIDE_FRITZBOX, &SLIDE_NETWORK, &SLIDE_WIFI,
+    &SLIDE_MSGBOARD,
 };
 #define N_SLIDES (int)(sizeof(ALL_SLIDES) / sizeof(ALL_SLIDES[0]))
 

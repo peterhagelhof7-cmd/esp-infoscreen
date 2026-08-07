@@ -5,6 +5,7 @@
 #include "termine.h"
 #include "display.h"
 #include "slides.h"
+#include "telegram.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -14,6 +15,7 @@
 #include "esp_http_server.h"
 #include "esp_system.h"
 #include "esp_log.h"
+#include "cJSON.h"
 
 static const char *TAG = "web";
 
@@ -81,8 +83,8 @@ static void html_escape(const char *in, char *out, size_t out_len)
     out[o] = '\0';
 }
 
-// --- Seite ------------------------------------------------------------------
-static esp_err_t root_get(httpd_req_t *req)
+// --- Einstellungsseite ------------------------------------------------------
+static esp_err_t settings_get(httpd_req_t *req)
 {
     net_status_t st;
     network_manager_get_status(&st);
@@ -96,14 +98,17 @@ static esp_err_t root_get(httpd_req_t *req)
     static const char *head =
         "<!doctype html><html lang=de><head><meta charset=utf-8>"
         "<meta name=viewport content='width=device-width,initial-scale=1'>"
-        "<title>esp-infoscreen Setup</title><style>"
+        "<title>esp-infoscreen Einstellungen</title><style>"
         "body{font-family:system-ui,sans-serif;background:#101830;color:#eee;margin:0;padding:16px}"
         ".card{max-width:460px;margin:0 auto;background:#1b2440;border-radius:12px;padding:20px}"
         "h1{font-size:20px;margin:0 0 4px} .sub{color:#8ab4f8;font-size:13px;margin-bottom:16px}"
         "label{display:block;margin:12px 0 4px;font-size:14px} "
         "select,input{width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:1px solid #33406a;background:#0d1428;color:#eee}"
         "button{margin-top:16px;width:100%;padding:12px;border:0;border-radius:8px;background:#3b6ef0;color:#fff;font-size:15px}"
-        ".st{font-size:13px;color:#9aa4c0;margin-top:14px}</style></head><body><div class=card>"
+        ".navbtn{display:block;max-width:460px;margin:0 auto 12px;text-align:center;padding:10px;border-radius:8px;"
+        "background:#28345c;color:#8ab4f8;text-decoration:none;font-size:14px}"
+        ".st{font-size:13px;color:#9aa4c0;margin-top:14px}</style></head><body>"
+        "<a class=navbtn href=/>&larr; Message Board</a><div class=card>"
         "<h1>esp-infoscreen</h1><div class=sub>WLAN-Einrichtung</div>"
         "<form method=post action=/save>"
         "<label>Netzwerk (SSID)</label><select name=ssid>";
@@ -125,7 +130,7 @@ static esp_err_t root_get(httpd_req_t *req)
         "</select>"
         "<label>Passwort</label><input type=password name=pass placeholder='WLAN-Passwort'>"
         "<button type=submit>Speichern &amp; Neustart</button></form>"
-        "<a href=/ style='display:block;text-align:center;color:#8ab4f8;margin-top:10px;font-size:13px'>Netzwerke neu suchen</a>");
+        "<a href=/settings style='display:block;text-align:center;color:#8ab4f8;margin-top:10px;font-size:13px'>Netzwerke neu suchen</a>");
 
     char st_line[128];
     const char *modestr = (st.mode == NET_MODE_STA_CONNECTED) ? "verbunden"
@@ -250,6 +255,29 @@ static esp_err_t root_get(httpd_req_t *req)
         has_key ? "Key aktuell konfiguriert." : "");
     httpd_resp_sendstr_chunk(req, owm_card);
 
+    // --- Telegram-Card (Bot-Token + Gruppen-ID) ---
+    char tgchat[32] = { 0 };
+    config_get_str("tg_chat", tgchat, sizeof(tgchat));
+    char tgchat_esc[48]; html_escape(tgchat, tgchat_esc, sizeof(tgchat_esc));
+    char tgtoken[64] = { 0 };
+    bool has_tok = config_get_str("tg_token", tgtoken, sizeof(tgtoken)) && tgtoken[0];
+    char tg_card[720];
+    snprintf(tg_card, sizeof(tg_card),
+        "<div class=card style='margin-top:16px'>"
+        "<h1>Telegram</h1><div class=sub>Message Board / Bot</div>"
+        "<form method=post action=/tg/config>"
+        "<label>Bot-Token</label>"
+        "<input type=text name=token placeholder='%s' autocomplete=off>"
+        "<label>Gruppen-Chat-ID</label>"
+        "<input type=text name=chat value=\"%s\" placeholder='z.B. -1001234567890'>"
+        "<button type=submit>Speichern</button></form>"
+        "<div class=st>Token vom @BotFather. Chat-ID der Gruppe (negativ). "
+        "Der Bot muss Mitglied der Gruppe sein. %s</div></div>",
+        has_tok ? "gesetzt - zum Aendern neuen Token eingeben" : "noch nicht gesetzt",
+        tgchat_esc,
+        has_tok ? "Token aktuell konfiguriert." : "");
+    httpd_resp_sendstr_chunk(req, tg_card);
+
     // --- Firmware-Update-Card (OTA) ---
     httpd_resp_sendstr_chunk(req,
         "<div class=card style='margin-top:16px'>"
@@ -317,10 +345,10 @@ static esp_err_t display_post(httpd_req_t *req)
     return ESP_OK;
 }
 
-static esp_err_t redirect_root(httpd_req_t *req)
+static esp_err_t redirect_settings(httpd_req_t *req)
 {
     httpd_resp_set_status(req, "303 See Other");
-    httpd_resp_set_hdr(req, "Location", "/");
+    httpd_resp_set_hdr(req, "Location", "/settings");
     httpd_resp_send(req, NULL, 0);
     return ESP_OK;
 }
@@ -338,7 +366,7 @@ static esp_err_t tadd_post(httpd_req_t *req)
     form_field(body, "time", time, sizeof(time));
     form_field(body, "title", title, sizeof(title));
     termine_add(date, time, title);
-    return redirect_root(req);
+    return redirect_settings(req);
 }
 
 static esp_err_t tdel_post(httpd_req_t *req)
@@ -351,7 +379,7 @@ static esp_err_t tdel_post(httpd_req_t *req)
 
     char idx[8] = { 0 };
     if (form_field(body, "i", idx, sizeof(idx))) termine_delete(atoi(idx));
-    return redirect_root(req);
+    return redirect_settings(req);
 }
 
 static esp_err_t owm_post(httpd_req_t *req)
@@ -369,7 +397,7 @@ static esp_err_t owm_post(httpd_req_t *req)
     }
     form_field(body, "loc", loc, sizeof(loc));
     config_set_str("owm_loc", loc);       // leer = Standort Johannesberg
-    return redirect_root(req);
+    return redirect_settings(req);
 }
 
 static esp_err_t device_post(httpd_req_t *req)
@@ -403,7 +431,7 @@ static esp_err_t brightness_post(httpd_req_t *req)
         config_set_int("brightness", pct);
         display_set_brightness(pct);   // sofort anwenden
     }
-    return redirect_root(req);
+    return redirect_settings(req);
 }
 
 static esp_err_t slides_post(httpd_req_t *req)
@@ -574,18 +602,118 @@ static esp_err_t save_post(httpd_req_t *req)
     return ESP_OK;
 }
 
+// --- Message Board (Startseite) ---------------------------------------------
+static esp_err_t root_get(httpd_req_t *req)
+{
+    httpd_resp_set_type(req, "text/html; charset=utf-8");
+    httpd_resp_sendstr(req,
+        "<!doctype html><html lang=de><head><meta charset=utf-8>"
+        "<meta name=viewport content='width=device-width,initial-scale=1'>"
+        "<title>Message Board</title><style>"
+        "body{font-family:system-ui,sans-serif;background:#101830;color:#eee;margin:0;padding:16px}"
+        ".card{max-width:640px;margin:0 auto;background:#1b2440;border-radius:12px;padding:16px}"
+        ".top{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}"
+        "h1{font-size:20px;margin:0}"
+        ".cog{padding:8px 14px;border-radius:8px;background:#28345c;color:#8ab4f8;text-decoration:none;font-size:14px}"
+        "#chat{height:60vh;overflow-y:auto;background:#0d1428;border-radius:8px;padding:10px;font-size:15px;line-height:1.5}"
+        ".msg{margin:4px 0} .msg b{color:#8ab4f8}"
+        "form{display:flex;gap:8px;margin-top:12px}"
+        "input{flex:1;padding:10px;border-radius:8px;border:1px solid #33406a;background:#0d1428;color:#eee}"
+        "button{padding:10px 18px;border:0;border-radius:8px;background:#3b6ef0;color:#fff;font-size:15px}"
+        "</style></head><body><div class=card>"
+        "<div class=top><h1>Message Board</h1><a class=cog href=/settings>&#9881; Einstellungen</a></div>"
+        "<div id=chat></div>"
+        "<form onsubmit='return send(event)'>"
+        "<input id=msg maxlength=400 placeholder='Nachricht an die Gruppe ...' autocomplete=off>"
+        "<button type=submit>Senden</button></form></div>"
+        "<script>"
+        "async function load(){try{let r=await fetch('/tg/history.json');let a=await r.json();"
+        "let c=document.getElementById('chat');let atb=c.scrollTop+c.clientHeight>=c.scrollHeight-20;"
+        "c.innerHTML='';for(const m of a){let d=document.createElement('div');d.className='msg';"
+        "let b=document.createElement('b');b.textContent=m.from+': ';d.appendChild(b);"
+        "d.appendChild(document.createTextNode(m.text));c.appendChild(d);}"
+        "if(atb)c.scrollTop=c.scrollHeight;}catch(e){}}"
+        "async function send(e){e.preventDefault();let i=document.getElementById('msg');"
+        "let t=i.value.trim();if(!t)return false;"
+        "await fetch('/tg/send',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},"
+        "body:'text='+encodeURIComponent(t)});i.value='';setTimeout(load,400);return false;}"
+        "load();setInterval(load,5000);"
+        "</script></body></html>");
+    return ESP_OK;
+}
+
+static esp_err_t tg_history_get(httpd_req_t *req)
+{
+    tg_msg_t msgs[TG_MAX_MSGS];
+    int n = telegram_get_history(msgs, TG_MAX_MSGS);
+    cJSON *arr = cJSON_CreateArray();
+    for (int i = 0; i < n; i++) {
+        cJSON *o = cJSON_CreateObject();
+        cJSON_AddStringToObject(o, "from", msgs[i].from);
+        cJSON_AddStringToObject(o, "text", msgs[i].text);
+        cJSON_AddItemToArray(arr, o);
+    }
+    char *json = cJSON_PrintUnformatted(arr);
+    cJSON_Delete(arr);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, json ? json : "[]");
+    if (json) cJSON_free(json);
+    return ESP_OK;
+}
+
+static esp_err_t tg_send_post(httpd_req_t *req)
+{
+    char body[600];
+    int total = req->content_len < (int)sizeof(body) - 1 ? req->content_len : (int)sizeof(body) - 1;
+    int recvd = total > 0 ? httpd_req_recv(req, body, total) : 0;
+    if (recvd < 0) return ESP_FAIL;
+    body[recvd > 0 ? recvd : 0] = '\0';
+
+    char text[420] = { 0 };
+    if (!form_field(body, "text", text, sizeof(text)) || text[0] == '\0') {
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_sendstr(req, "leer");
+        return ESP_OK;
+    }
+    if (!telegram_send(text)) {
+        httpd_resp_set_status(req, "503 Service Unavailable");
+        httpd_resp_sendstr(req, "Telegram nicht konfiguriert oder Fehler");
+        return ESP_OK;
+    }
+    httpd_resp_sendstr(req, "OK");
+    return ESP_OK;
+}
+
+static esp_err_t tg_config_post(httpd_req_t *req)
+{
+    char body[256];
+    int total = req->content_len < (int)sizeof(body) - 1 ? req->content_len : (int)sizeof(body) - 1;
+    int recvd = total > 0 ? httpd_req_recv(req, body, total) : 0;
+    if (recvd < 0) return ESP_FAIL;
+    body[recvd > 0 ? recvd : 0] = '\0';
+
+    char token[64] = { 0 }, chat[32] = { 0 };
+    if (form_field(body, "token", token, sizeof(token)) && token[0])
+        config_set_str("tg_token", token);   // nur bei nicht-leerer Eingabe ueberschreiben
+    form_field(body, "chat", chat, sizeof(chat));
+    config_set_str("tg_chat", chat);
+    ESP_LOGI(TAG, "Telegram-Konfig gespeichert (Chat '%s')", chat);
+    return redirect_settings(req);
+}
+
 void web_server_start(void)
 {
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.lru_purge_enable = true;
     cfg.stack_size = 8192;
-    cfg.max_uri_handlers = 20;
+    cfg.max_uri_handlers = 28;
     httpd_handle_t server = NULL;
     if (httpd_start(&server, &cfg) != ESP_OK) {
         ESP_LOGE(TAG, "HTTP-Server-Start fehlgeschlagen");
         return;
     }
     httpd_uri_t root = { .uri = "/", .method = HTTP_GET, .handler = root_get };
+    httpd_uri_t sett = { .uri = "/settings", .method = HTTP_GET, .handler = settings_get };
     httpd_uri_t save = { .uri = "/save", .method = HTTP_POST, .handler = save_post };
     httpd_uri_t ota  = { .uri = "/ota", .method = HTTP_POST, .handler = ota_post };
     httpd_uri_t disp = { .uri = "/display", .method = HTTP_POST, .handler = display_post };
@@ -600,7 +728,11 @@ void web_server_start(void)
     httpd_uri_t cul  = { .uri = "/config/upload", .method = HTTP_POST, .handler = configul_post };
     httpd_uri_t rbt  = { .uri = "/reboot", .method = HTTP_POST, .handler = reboot_post };
     httpd_uri_t fac  = { .uri = "/factory", .method = HTTP_POST, .handler = factory_post };
+    httpd_uri_t tgh  = { .uri = "/tg/history.json", .method = HTTP_GET, .handler = tg_history_get };
+    httpd_uri_t tgs  = { .uri = "/tg/send", .method = HTTP_POST, .handler = tg_send_post };
+    httpd_uri_t tgc  = { .uri = "/tg/config", .method = HTTP_POST, .handler = tg_config_post };
     httpd_register_uri_handler(server, &root);
+    httpd_register_uri_handler(server, &sett);
     httpd_register_uri_handler(server, &save);
     httpd_register_uri_handler(server, &ota);
     httpd_register_uri_handler(server, &disp);
@@ -615,5 +747,8 @@ void web_server_start(void)
     httpd_register_uri_handler(server, &cul);
     httpd_register_uri_handler(server, &rbt);
     httpd_register_uri_handler(server, &fac);
+    httpd_register_uri_handler(server, &tgh);
+    httpd_register_uri_handler(server, &tgs);
+    httpd_register_uri_handler(server, &tgc);
     ESP_LOGI(TAG, "HTTP-Konfig-Server gestartet (Port 80)");
 }
