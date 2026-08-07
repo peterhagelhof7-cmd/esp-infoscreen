@@ -94,33 +94,28 @@ static void clock_build(lv_obj_t *p)
 static const slide_t SLIDE_CLOCK = { "Uhrzeit & Datum", clock_build, clock_update };
 
 // ===================== Slide: Wetter (OpenWeatherMap) ========================
+// Obere Haelfte: aktuelle Werte. Untere Haelfte: 3 gleich grosse Zellen
+// (Morgen / Uebermorgen / Wochentag danach) mit Min/Max + Kurz-Wetter.
 static void owm_build(lv_obj_t *p)
 {
     owm_data_t d; owm_get(&d);
 
-    if (!d.has_key) {
+    if (!d.has_key || !d.valid) {
         lv_obj_t *l = lv_label_create(p);
         lv_obj_set_style_text_font(l, FONT_MED, 0);
         lv_obj_set_style_text_color(l, lv_color_hex(0xb0b8d0), 0);
-        lv_label_set_text(l, "Kein API-Key (Einstellungen)");
-        lv_obj_center(l);
-        return;
-    }
-    if (!d.valid) {
-        lv_obj_t *l = lv_label_create(p);
-        lv_obj_set_style_text_font(l, FONT_MED, 0);
-        lv_obj_set_style_text_color(l, lv_color_hex(0xb0b8d0), 0);
-        lv_label_set_text(l, "Wetter nicht verfuegbar");
+        lv_label_set_text(l, !d.has_key ? "Kein API-Key (Einstellungen)" : "Wetter nicht verfuegbar");
         lv_obj_center(l);
         return;
     }
 
+    // --- obere Haelfte: aktuell ---
     char temp[24]; snprintf(temp, sizeof(temp), "%d \xc2\xb0""C", d.temp);
     lv_obj_t *lt = lv_label_create(p);
     lv_obj_set_style_text_font(lt, FONT_BIG, 0);
     lv_obj_set_style_text_color(lt, lv_color_hex(0xffffff), 0);
     lv_label_set_text(lt, temp);
-    lv_obj_align(lt, LV_ALIGN_CENTER, 0, -80);
+    lv_obj_align(lt, LV_ALIGN_TOP_MID, 0, 6);
 
     char desc[64]; de_ascii(d.desc, desc, sizeof(desc));
     if (desc[0]) desc[0] = (char)toupper((unsigned char)desc[0]);
@@ -128,15 +123,56 @@ static void owm_build(lv_obj_t *p)
     lv_obj_set_style_text_font(ld, FONT_MED, 0);
     lv_obj_set_style_text_color(ld, lv_color_hex(0x8ab4f8), 0);
     lv_label_set_text(ld, desc);
-    lv_obj_align(ld, LV_ALIGN_CENTER, 0, -20);
+    lv_obj_align(ld, LV_ALIGN_TOP_MID, 0, 66);
 
-    char more[64];
+    char more[80];
     snprintf(more, sizeof(more), "gefuehlt %d \xc2\xb0""C  -  %d%% rF  -  Wind %d km/h", d.feels, d.humidity, d.wind_kmh);
     lv_obj_t *lm = lv_label_create(p);
     lv_obj_set_style_text_font(lm, FONT_MED, 0);
     lv_obj_set_style_text_color(lm, lv_color_hex(0xb0b8d0), 0);
     lv_label_set_text(lm, more);
-    lv_obj_align(lm, LV_ALIGN_CENTER, 0, 40);
+    lv_obj_align(lm, LV_ALIGN_TOP_MID, 0, 112);
+
+    // --- untere Haelfte: 3 Vorhersage-Zellen ---
+    if (!d.fc_valid) return;
+    const int cx[3] = { -258, 0, 258 };   // Zellenmittelpunkte relativ zur Mitte
+    for (int k = 0; k < 3; k++) {
+        if (!d.fc[k].valid) continue;
+        lv_obj_t *cell = lv_obj_create(p);
+        lv_obj_set_size(cell, 244, 178);
+        lv_obj_align(cell, LV_ALIGN_BOTTOM_MID, cx[k], -4);
+        lv_obj_set_style_bg_color(cell, lv_color_hex(0x16203c), 0);
+        lv_obj_set_style_bg_opa(cell, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_color(cell, lv_color_hex(0x33406a), 0);
+        lv_obj_set_style_border_width(cell, 2, 0);
+        lv_obj_set_style_radius(cell, 8, 0);
+        lv_obj_set_style_pad_all(cell, 6, 0);
+        lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t *hdr = lv_label_create(cell);
+        lv_obj_set_style_text_font(hdr, FONT_MED, 0);
+        lv_obj_set_style_text_color(hdr, lv_color_hex(0x8ab4f8), 0);
+        lv_label_set_text(hdr, d.fc[k].label);
+        lv_obj_align(hdr, LV_ALIGN_TOP_MID, 0, 0);
+
+        char tt[24]; snprintf(tt, sizeof(tt), "%d\xc2\xb0 / %d\xc2\xb0", d.fc[k].tmin, d.fc[k].tmax);
+        lv_obj_t *lte = lv_label_create(cell);
+        lv_obj_set_style_text_font(lte, FONT_MED, 0);
+        lv_obj_set_style_text_color(lte, lv_color_hex(0xffffff), 0);
+        lv_label_set_text(lte, tt);
+        lv_obj_align(lte, LV_ALIGN_CENTER, 0, 4);
+
+        char cd[40]; de_ascii(d.fc[k].desc, cd, sizeof(cd));
+        if (cd[0]) cd[0] = (char)toupper((unsigned char)cd[0]);
+        lv_obj_t *lcd = lv_label_create(cell);
+        lv_obj_set_style_text_font(lcd, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_color(lcd, lv_color_hex(0xb0b8d0), 0);
+        lv_obj_set_width(lcd, 228);
+        lv_obj_set_style_text_align(lcd, LV_TEXT_ALIGN_CENTER, 0);
+        lv_label_set_long_mode(lcd, LV_LABEL_LONG_WRAP);
+        lv_label_set_text(lcd, cd);
+        lv_obj_align(lcd, LV_ALIGN_BOTTOM_MID, 0, 0);
+    }
 }
 
 static const slide_t SLIDE_OWM = { "Wetter Johannesberg", owm_build, NULL };
@@ -350,18 +386,34 @@ static void calendar_build(lv_obj_t *p)
         lv_obj_center(l);
         return;
     }
+
+    // Rahmen gleichmaessig ueber die Inhaltsflaeche (800x372) verteilen, gleiche Hoehe.
+    const int area_h = 372, margin = 4, gap = 6, width = 760;
+    int frame_h = (area_h - 2 * margin - (show - 1) * gap) / show;
     for (int i = 0; i < show; i++) {
         int yy = 0, mm = 0, dd = 0;
         sscanf(ev[i].date, "%d-%d-%d", &yy, &mm, &dd);
-        char line[72];
-        snprintf(line, sizeof(line), "%02d.%02d.  %s", dd, mm, ev[i].label);
-        lv_obj_t *l = lv_label_create(p);
+        char line[80];
+        snprintf(line, sizeof(line), "%02d.%02d.   %s", dd, mm, ev[i].label);
+
+        lv_obj_t *box = lv_obj_create(p);
+        lv_obj_set_size(box, width, frame_h);
+        lv_obj_align(box, LV_ALIGN_TOP_MID, 0, margin + i * (frame_h + gap));
+        lv_obj_set_style_bg_color(box, lv_color_hex(0x16203c), 0);
+        lv_obj_set_style_bg_opa(box, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_color(box, lv_color_hex(0x33406a), 0);
+        lv_obj_set_style_border_width(box, 2, 0);
+        lv_obj_set_style_radius(box, 8, 0);
+        lv_obj_set_style_pad_left(box, 16, 0);
+        lv_obj_clear_flag(box, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t *l = lv_label_create(box);
         lv_obj_set_style_text_font(l, FONT_MED, 0);
-        lv_obj_set_style_text_color(l, lv_color_hex(0xe0e0e0), 0);
-        lv_obj_set_width(l, 720);
+        lv_obj_set_style_text_color(l, lv_color_hex(0xe6e6e6), 0);
+        lv_obj_set_width(l, width - 40);
         lv_label_set_long_mode(l, LV_LABEL_LONG_DOT);
         lv_label_set_text(l, line);
-        lv_obj_align(l, LV_ALIGN_TOP_LEFT, 40, 6 + i * 54);
+        lv_obj_align(l, LV_ALIGN_LEFT_MID, 0, 0);
     }
 }
 
