@@ -89,8 +89,9 @@ static esp_err_t settings_get(httpd_req_t *req)
     net_status_t st;
     network_manager_get_status(&st);
 
-    // Netze scannen (bis 16)
-    net_ap_t aps[16];
+    // Netze scannen (bis 16). static: HTTP-Handler laufen alle im EINEN Server-
+    // Task (sequenziell) -> spart Stack (sonst Stack-Overflow der Seite).
+    static net_ap_t aps[16];
     int n = network_manager_scan(aps, 16);
 
     httpd_resp_set_type(req, "text/html; charset=utf-8");
@@ -193,7 +194,7 @@ static esp_err_t settings_get(httpd_req_t *req)
         "<div class=card style='margin-top:16px'><h1>Termine</h1>"
         "<div class=sub>naechste Termine (erscheinen im Kalender)</div>");
     {
-        termine_entry_t te[40];
+        static termine_entry_t te[40];   // static: siehe aps-Hinweis oben (Stack)
         int tn = termine_get_all(te, 40);
         for (int i = 0; i < tn; i++) {
             char de[128], row[640];
@@ -705,7 +706,7 @@ void web_server_start(void)
 {
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.lru_purge_enable = true;
-    cfg.stack_size = 8192;
+    cfg.stack_size = 12288;
     cfg.max_uri_handlers = 28;
     httpd_handle_t server = NULL;
     if (httpd_start(&server, &cfg) != ESP_OK) {
