@@ -169,25 +169,25 @@ static void build_termine(char *out, size_t len)
     // static: build_termine laeuft nur im Telegram-Task (nicht reentrant) ->
     // haelt den Task-Stack frei (grosse Arrays sonst = Stack-Overflow).
     typedef struct { char date[11]; char label[64]; } ev_t;
-    static ev_t ev[56];
+    static ev_t ev[100];
     int n = 0;
     char today[16] = { 0 };
     time_t now = time(NULL);
     struct tm tm; localtime_r(&now, &tm);
     if (tm.tm_year > 120) strftime(today, sizeof(today), "%Y-%m-%d", &tm);
 
-    static termine_entry_t te[40];
-    int tn = termine_get_all(te, 40);
-    for (int i = 0; i < tn && n < 56; i++) {
+    static termine_entry_t te[50];
+    int tn = termine_get_all(te, 50);
+    for (int i = 0; i < tn && n < 100; i++) {
         if (today[0] && strcmp(te[i].date, today) < 0) continue;
         strncpy(ev[n].date, te[i].date, 10); ev[n].date[10] = '\0';
         if (te[i].time[0]) snprintf(ev[n].label, sizeof(ev[n].label), "%s %s", te[i].time, te[i].title);
         else               snprintf(ev[n].label, sizeof(ev[n].label), "%s", te[i].title);
         n++;
     }
-    static muell_entry_t me[16];
-    int mn = muell_get(me, 16);
-    for (int i = 0; i < mn && n < 56; i++) {
+    static muell_entry_t me[48];
+    int mn = muell_get(me, 48);
+    for (int i = 0; i < mn && n < 100; i++) {
         strncpy(ev[n].date, me[i].day, 10); ev[n].date[10] = '\0';
         snprintf(ev[n].label, sizeof(ev[n].label), "Abfuhr: %s", me[i].title);
         n++;

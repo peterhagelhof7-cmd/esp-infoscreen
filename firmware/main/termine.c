@@ -10,8 +10,8 @@
 
 static const char *TAG = "termine";
 #define KEY "termine"
-#define BUFSZ 4000
-#define MAX_TERMINE 40
+#define BUFSZ 4000        // NVS-String-Obergrenze (~4000 B)
+#define MAX_TERMINE 50    // selbst angelegte Termine (Muell zaehlt NICHT dazu)
 
 // Laedt das gespeicherte JSON-Array (oder ein leeres).
 static cJSON *load_array(void)
@@ -25,14 +25,16 @@ static cJSON *load_array(void)
     return arr;
 }
 
-static void save_array(cJSON *arr)
+// Speichert das Array. Liefert false, wenn es nicht in den NVS-String passt.
+static bool save_array(cJSON *arr)
 {
     char *json = cJSON_PrintUnformatted(arr);
-    if (json) {
-        if (strlen(json) < BUFSZ) config_set_str(KEY, json);
-        else ESP_LOGW(TAG, "Termine-JSON zu gross (%u), nicht gespeichert", (unsigned)strlen(json));
-        cJSON_free(json);
-    }
+    if (!json) return false;
+    bool ok = strlen(json) < BUFSZ;
+    if (ok) config_set_str(KEY, json);
+    else ESP_LOGW(TAG, "Termine-JSON zu gross (%u B), nicht gespeichert", (unsigned)strlen(json));
+    cJSON_free(json);
+    return ok;
 }
 
 int termine_get_all(termine_entry_t *out, int max)
@@ -65,10 +67,10 @@ bool termine_add(const char *date, const char *time, const char *title)
     cJSON_AddStringToObject(e, "t", time ? time : "");
     cJSON_AddStringToObject(e, "ti", title);
     cJSON_AddItemToArray(arr, e);
-    save_array(arr);
+    bool ok = save_array(arr);   // false = passt nicht mehr in den NVS-Speicher
     cJSON_Delete(arr);
-    ESP_LOGI(TAG, "Termin hinzugefuegt: %s %s", date, title);
-    return true;
+    if (ok) ESP_LOGI(TAG, "Termin hinzugefuegt: %s %s", date, title);
+    return ok;
 }
 
 void termine_delete(int idx)

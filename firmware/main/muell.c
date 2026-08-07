@@ -14,7 +14,8 @@
 static const char *TAG = "muell";
 // Johannesberg-Oberafferbach (Landkreis Aschaffenburg, MyMuell/jumomind)
 #define MUELL_URL "https://mymuell.jumomind.com/mmapp/api.php?r=dates&city_id=44886&area_id=44886"
-#define MAX_ENTRIES 16
+#define MAX_ENTRIES 48                           // ~ein Jahr Abfuhrtermine vorhalten
+#define PARSE_BUF   32768
 #define POLL_INTERVAL_MS (6 * 60 * 60 * 1000)   // alle 6 Stunden
 
 static muell_entry_t s_list[MAX_ENTRIES];
@@ -26,11 +27,11 @@ static void poll_once(void)
     char today[11];
     time_today_str(today, sizeof(today));
 
-    char *buf = heap_caps_malloc(16384, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (!buf) buf = malloc(16384);
+    char *buf = heap_caps_malloc(PARSE_BUF, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!buf) buf = malloc(PARSE_BUF);
     if (!buf) return;
 
-    int n = http_get(MUELL_URL, buf, 16384);
+    int n = http_get(MUELL_URL, buf, PARSE_BUF);
     if (n <= 0) { free(buf); ESP_LOGW(TAG, "Abruf fehlgeschlagen"); return; }
 
     cJSON *arr = cJSON_Parse(buf);

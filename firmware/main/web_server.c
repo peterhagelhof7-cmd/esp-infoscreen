@@ -194,8 +194,8 @@ static esp_err_t settings_get(httpd_req_t *req)
         "<div class=card style='margin-top:16px'><h1>Termine</h1>"
         "<div class=sub>naechste Termine (erscheinen im Kalender)</div>");
     {
-        static termine_entry_t te[40];   // static: siehe aps-Hinweis oben (Stack)
-        int tn = termine_get_all(te, 40);
+        static termine_entry_t te[50];   // static: siehe aps-Hinweis oben (Stack)
+        int tn = termine_get_all(te, 50);
         for (int i = 0; i < tn; i++) {
             char de[128], row[640];
             html_escape(te[i].title, de, sizeof(de));
@@ -462,7 +462,7 @@ static esp_err_t slides_post(httpd_req_t *req)
 
 static esp_err_t configdl_get(httpd_req_t *req)
 {
-    static char buf[4096];
+    static char buf[8192];   // Termine-Liste kann gross sein
     int n = config_export_json(buf, sizeof(buf));
     if (n < 0) { httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Export fehlgeschlagen"); return ESP_OK; }
     httpd_resp_set_type(req, "application/json");
@@ -473,7 +473,7 @@ static esp_err_t configdl_get(httpd_req_t *req)
 
 static esp_err_t configul_post(httpd_req_t *req)
 {
-    static char buf[4096];
+    static char buf[8192];
     int total = req->content_len < (int)sizeof(buf) - 1 ? req->content_len : (int)sizeof(buf) - 1;
     int recvd = httpd_req_recv(req, buf, total);
     if (recvd <= 0) return ESP_FAIL;

@@ -352,14 +352,14 @@ static void calendar_build(lv_obj_t *p)
     char today[11]; time_today_str(today, sizeof(today));
 
     // Statisch (laeuft nur im LVGL-Task, nicht reentrant) -> spart Stack.
-    static cal_event_t ev[40];
-    static termine_entry_t te[40];
-    static muell_entry_t me[16];
+    static cal_event_t ev[100];
+    static termine_entry_t te[50];
+    static muell_entry_t me[48];
     int n = 0;
 
     // Nutzer-Termine
-    int tn = termine_get_all(te, 40);
-    for (int i = 0; i < tn && n < 40; i++) {
+    int tn = termine_get_all(te, 50);
+    for (int i = 0; i < tn && n < 100; i++) {
         if (today[0] && strcmp(te[i].date, today) < 0) continue;   // Vergangenes weglassen
         strncpy(ev[n].date, te[i].date, sizeof(ev[0].date) - 1); ev[n].date[10] = '\0';
         char ti[48]; de_ascii(te[i].title, ti, sizeof(ti));
@@ -368,8 +368,8 @@ static void calendar_build(lv_obj_t *p)
         n++;
     }
     // Muellabfuhr
-    int mn = muell_get(me, 16);
-    for (int i = 0; i < mn && n < 40; i++) {
+    int mn = muell_get(me, 48);
+    for (int i = 0; i < mn && n < 100; i++) {
         strncpy(ev[n].date, me[i].day, sizeof(ev[0].date) - 1); ev[n].date[10] = '\0';
         char ti[32]; de_ascii(me[i].title, ti, sizeof(ti));
         snprintf(ev[n].label, sizeof(ev[n].label), "Abfuhr: %s", ti);
