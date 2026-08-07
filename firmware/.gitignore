@@ -1,0 +1,8 @@
+.pio/
+build/
+managed_components/
+dependencies.lock
+sdkconfig
+sdkconfig.old
+sdkconfig.esp32-8048S070N
+*.bin

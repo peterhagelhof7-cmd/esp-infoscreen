@@ -1,0 +1,36 @@
+# ==== esp-infoscreen — ESP-IDF Grundkonfiguration (ESP32-S3 N16R8) ====
+# Uebernommen vom bewaehrten ESP-BMC-N16R8-Stand + Display-/LVGL-Ergaenzungen.
+
+CONFIG_IDF_TARGET="esp32s3"
+
+# --- Flash: 16 MB, QIO 80 MHz ---
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+
+# --- PSRAM: 8 MB Octal (R8), 80 MHz ---
+# (Falls ein reales Board wider Erwarten Quad-PSRAM hat: MODE_OCT -> MODE_QUAD.)
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_USE_MALLOC=y
+
+# --- CPU 240 MHz ---
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+
+# --- Eigene Partitionstabelle ---
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
+
+# --- FreeRTOS 1000 Hz (glattes LVGL-Timing) ---
+CONFIG_FREERTOS_HZ=1000
+
+# --- Groesserer Main-Task-Stack (Display-/LVGL-Init) ---
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
+
+# --- RGB-LCD: Neustart des Panels im VSYNC (verhindert Bild-Drift) ---
+CONFIG_LCD_RGB_RESTART_IN_VSYNC=y
+
+# --- LVGL (Farbtiefe 16 bit, passend zu RGB565) ---
+CONFIG_LV_COLOR_DEPTH_16=y

@@ -1,0 +1,11 @@
+# Managed Components (ESP-IDF Component Manager)
+dependencies:
+  idf:
+    version: ">=5.1"
+  # LVGL 9 + Espressif LVGL-Port (RGB-Panel-Anbindung, Tick, Puffer, Tearing).
+  # LVGL >=9.3 noetig: esp_lvgl_port 2.4 nutzt LV_COLOR_FORMAT_RGB565_SWAPPED
+  # (erst ab LVGL 9.3 vorhanden).
+  lvgl/lvgl:
+    version: "~9.3.0"
+  espressif/esp_lvgl_port:
+    version: "^2.4.0"
