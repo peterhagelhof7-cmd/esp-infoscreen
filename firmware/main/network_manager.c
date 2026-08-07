@@ -9,6 +9,7 @@
 #include "esp_netif.h"
 #include "esp_event.h"
 #include "esp_mac.h"
+#include "esp_timer.h"
 #include "esp_log.h"
 
 static const char *TAG = "network";
@@ -18,6 +19,31 @@ static net_status_t s_status;
 static SemaphoreHandle_t s_lock;
 static int s_retry;
 static bool s_ap_started;
+
+// --- gleitender RSSI-Mittelwert (letzte ~20 s, 1x/s abgetastet) ---
+#define RSSI_WINDOW 20
+static int8_t s_rssi_ring[RSSI_WINDOW];
+static int s_rssi_count;
+static int s_rssi_head;
+
+static void rssi_sample_cb(void *arg)
+{
+    (void)arg;
+    if (!s_status.connected) return;
+    wifi_ap_record_t ap;
+    if (esp_wifi_sta_get_ap_info(&ap) != ESP_OK) return;
+    s_rssi_ring[s_rssi_head] = ap.rssi;
+    s_rssi_head = (s_rssi_head + 1) % RSSI_WINDOW;
+    if (s_rssi_count < RSSI_WINDOW) s_rssi_count++;
+}
+
+int network_manager_get_avg_rssi(void)
+{
+    if (s_rssi_count == 0) return 0;
+    int sum = 0;
+    for (int i = 0; i < s_rssi_count; i++) sum += s_rssi_ring[i];
+    return sum / s_rssi_count;
+}
 
 static void set_mode(net_mode_t m)
 {
@@ -118,6 +144,11 @@ void network_manager_init(void)
         start_installer_ap();
     }
     ESP_ERROR_CHECK(esp_wifi_start());
+
+    // RSSI 1x/s abtasten (fuer den 20-s-Mittelwert auf der WLAN-Slide)
+    const esp_timer_create_args_t ta = { .callback = rssi_sample_cb, .name = "rssi" };
+    esp_timer_handle_t th;
+    if (esp_timer_create(&ta, &th) == ESP_OK) esp_timer_start_periodic(th, 1000000);
 }
 
 void network_manager_get_status(net_status_t *out)

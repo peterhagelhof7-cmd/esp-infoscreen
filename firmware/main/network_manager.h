@@ -40,3 +40,7 @@ int network_manager_scan(net_ap_t *list, int max);
 
 // Neue WLAN-Zugangsdaten speichern und Geraet neu starten (uebernimmt sie).
 void network_manager_apply_wifi(const char *ssid, const char *pass);
+
+// Gemittelter WLAN-Empfang (dBm) der letzten ~20 Sekunden. 0 = keine Daten
+// (nicht verbunden). Wird intern jede Sekunde abgetastet.
+int network_manager_get_avg_rssi(void);
