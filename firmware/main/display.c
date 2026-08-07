@@ -8,9 +8,8 @@
 #include "esp_log.h"
 
 static const char *TAG = "display";
-static lv_display_t *s_disp;   // gespeichertes Handle fuer display_set_rotation()
 
-lv_display_t *display_init(void)
+lv_display_t *display_init(bool rot180)
 {
     // --- Hintergrundbeleuchtung erst mal aus (bis Panel initialisiert) ---
     gpio_config_t bk_cfg = {
@@ -25,8 +24,10 @@ lv_display_t *display_init(void)
     esp_lcd_rgb_panel_config_t panel_config = {
         .clk_src = LCD_CLK_SRC_PLL160M,
         .data_width = 16,
-        .num_fbs = 2,                              // Doppelpuffer in PSRAM
-        .bounce_buffer_size_px = DISP_H_RES * 10,  // Bounce-Puffer (Tearing/DMA)
+        .num_fbs = 2,                              // Doppelpuffer in PSRAM (Anti-Tearing)
+        // KEIN Bounce-Puffer: Bounce-Buffer-Modus und Doppel-Framebuffer-
+        // Anti-Tearing sind konkurrierende Strategien -> zusammen = Flackern.
+        // Octal-PSRAM hat genug Bandbreite fuer den direkten Framebuffer.
         .dma_burst_size = 64,                      // ersetzt sram/psram_trans_align (IDF >=5.3)
         .de_gpio_num = DISP_PIN_DE,
         .pclk_gpio_num = DISP_PIN_PCLK,
@@ -83,41 +84,27 @@ lv_display_t *display_init(void)
         .vres = DISP_V_RES,
         .monochrome = false,
         .color_format = LV_COLOR_FORMAT_RGB565,
+        // 180-Grad-Drehung per HW-Mirror des RGB-Panels (Deckenmontage).
         .rotation = {
             .swap_xy = false,
-            .mirror_x = false,
-            .mirror_y = false,
+            .mirror_x = rot180,
+            .mirror_y = rot180,
         },
         .flags = {
             .buff_spiram = true,
-            .full_refresh = true,   // fuer RGB-Panels mit 2 Framebuffern empfohlen
+            .full_refresh = true,   // ganzer Screen je Frame -> mit 2 FBs tearing-frei
         },
     };
     const lvgl_port_display_rgb_cfg_t rgb_cfg = {
         .flags = {
-            .bb_mode = true,        // Bounce-Buffer-Modus
-            .avoid_tearing = true,
+            .bb_mode = false,       // KEIN Bounce-Buffer (siehe Panel-Config oben)
+            .avoid_tearing = true,  // Doppel-Framebuffer-Swap gegen Tearing/Flackern
         },
     };
     lv_display_t *disp = lvgl_port_add_disp_rgb(&disp_cfg, &rgb_cfg);
 
     // --- Hintergrundbeleuchtung an ---
     gpio_set_level(DISP_PIN_BCKL, 1);
-    ESP_LOGI(TAG, "Display bereit");
-    s_disp = disp;
+    ESP_LOGI(TAG, "Display bereit (Drehung: %s)", rot180 ? "180 Grad" : "0 Grad");
     return disp;
-}
-
-void display_set_rotation(bool rotated_180)
-{
-    if (s_disp) display_set_rotated_180(s_disp, rotated_180);
-}
-
-void display_set_rotated_180(lv_display_t *disp, bool rotated)
-{
-    // LVGL-Software-Rotation (fuer eine Slideshow mit seltenen Updates guenstig).
-    lvgl_port_lock(0);
-    lv_display_set_rotation(disp, rotated ? LV_DISPLAY_ROTATION_180
-                                          : LV_DISPLAY_ROTATION_0);
-    lvgl_port_unlock();
 }

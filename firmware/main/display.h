@@ -2,13 +2,7 @@
 #include "lvgl.h"
 
 // Initialisiert das RGB-Panel + Hintergrundbeleuchtung + LVGL-Port.
-// Liefert die LVGL-Display-Instanz. Blockiert kurz waehrend der Panel-Init.
-lv_display_t *display_init(void);
-
-// Setzt die Display-Drehung (0 oder 180 Grad). Wird spaeter vom Webinterface
-// gesteuert (Deckenmontage). true = 180 Grad.
-void display_set_rotated_180(lv_display_t *disp, bool rotated);
-
-// Wie oben, nutzt aber das intern gespeicherte Display-Handle (aus display_init).
-// Bequem fuer Web-Handler / Boot-Anwendung der gespeicherten Einstellung.
-void display_set_rotation(bool rotated_180);
+// rot180 = true dreht die Anzeige per HW-Spiegelung um 180 Grad (Deckenmontage).
+// Die Drehung wird beim Init festgelegt (HW-State des RGB-Panels); ein Wechsel
+// zur Laufzeit erfordert einen Neustart. Liefert die LVGL-Display-Instanz.
+lv_display_t *display_init(bool rot180);

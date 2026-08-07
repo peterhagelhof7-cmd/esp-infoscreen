@@ -2,7 +2,6 @@
 #include "network_manager.h"
 #include "ota_manager.h"
 #include "config_store.h"
-#include "display.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -139,7 +138,7 @@ static esp_err_t root_get(httpd_req_t *req)
     char disp_card[420];
     snprintf(disp_card, sizeof(disp_card),
         "<div class=card style='margin-top:16px'>"
-        "<h1>Anzeige</h1><div class=sub>Ausrichtung</div>"
+        "<h1>Anzeige</h1><div class=sub>Ausrichtung (Neustart)</div>"
         "<form method=post action=/display>"
         "<label style='display:flex;align-items:center;gap:10px'>"
         "<input type=checkbox name=rot value=1 %s style='width:auto'> Anzeige um 180&deg; drehen</label>"
@@ -179,13 +178,15 @@ static esp_err_t display_post(httpd_req_t *req)
     char tmp[8];
     bool rot = form_field(body, "rot", tmp, sizeof(tmp)) && tmp[0] == '1';
     config_set_str("rot180", rot ? "1" : "0");
-    display_set_rotation(rot);   // sofort anwenden, kein Neustart noetig
-    ESP_LOGI(TAG, "Anzeige-Drehung: %s", rot ? "180 Grad" : "0 Grad");
+    ESP_LOGI(TAG, "Anzeige-Drehung: %s (Neustart)", rot ? "180 Grad" : "0 Grad");
 
-    // zurueck zur Startseite
-    httpd_resp_set_status(req, "303 See Other");
-    httpd_resp_set_hdr(req, "Location", "/");
-    httpd_resp_send(req, NULL, 0);
+    // Die Drehung wird beim Init als HW-State des RGB-Panels gesetzt -> Neustart.
+    httpd_resp_set_type(req, "text/html; charset=utf-8");
+    httpd_resp_sendstr(req,
+        "<!doctype html><meta charset=utf-8><body style='font-family:sans-serif;background:#101830;color:#eee;padding:24px'>"
+        "<h2>Gespeichert.</h2><p>Das Geraet startet neu und uebernimmt die Ausrichtung.</p></body>");
+    vTaskDelay(pdMS_TO_TICKS(800));
+    esp_restart();
     return ESP_OK;
 }
 

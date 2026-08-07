@@ -20,11 +20,10 @@ void app_main(void)
     ota_manager_init();
     config_store_init();
 
-    lv_display_t *disp = display_init();
-
-    // Gespeicherte Anzeige-Drehung anwenden (Deckenmontage 180 Grad)
+    // Gespeicherte Anzeige-Drehung (Deckenmontage 180 Grad) beim Init anwenden
     char rot[4];
-    display_set_rotation(config_get_str("rot180", rot, sizeof(rot)) && rot[0] == '1');
+    bool rot180 = config_get_str("rot180", rot, sizeof(rot)) && rot[0] == '1';
+    lv_display_t *disp = display_init(rot180);
 
     // Netzwerk VOR den Slides (Slides fragen Netzwerkstatus ab)
     network_manager_init();
