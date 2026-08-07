@@ -8,6 +8,7 @@
 #include "esp_log.h"
 
 static const char *TAG = "display";
+static lv_display_t *s_disp;   // gespeichertes Handle fuer display_set_rotation()
 
 lv_display_t *display_init(void)
 {
@@ -103,7 +104,13 @@ lv_display_t *display_init(void)
     // --- Hintergrundbeleuchtung an ---
     gpio_set_level(DISP_PIN_BCKL, 1);
     ESP_LOGI(TAG, "Display bereit");
+    s_disp = disp;
     return disp;
+}
+
+void display_set_rotation(bool rotated_180)
+{
+    if (s_disp) display_set_rotated_180(s_disp, rotated_180);
 }
 
 void display_set_rotated_180(lv_display_t *disp, bool rotated)

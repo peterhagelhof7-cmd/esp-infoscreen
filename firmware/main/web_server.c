@@ -1,6 +1,8 @@
 #include "web_server.h"
 #include "network_manager.h"
 #include "ota_manager.h"
+#include "config_store.h"
+#include "display.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -131,6 +133,20 @@ static esp_err_t root_get(httpd_req_t *req)
     httpd_resp_sendstr_chunk(req, st_line);
     httpd_resp_sendstr_chunk(req, "</div>");   // WLAN-Card schliessen
 
+    // --- Anzeige-Card (180-Grad-Drehung) ---
+    char rot[4];
+    bool rotated = config_get_str("rot180", rot, sizeof(rot)) && rot[0] == '1';
+    char disp_card[420];
+    snprintf(disp_card, sizeof(disp_card),
+        "<div class=card style='margin-top:16px'>"
+        "<h1>Anzeige</h1><div class=sub>Ausrichtung</div>"
+        "<form method=post action=/display>"
+        "<label style='display:flex;align-items:center;gap:10px'>"
+        "<input type=checkbox name=rot value=1 %s style='width:auto'> Anzeige um 180&deg; drehen</label>"
+        "<button type=submit>Uebernehmen</button></form></div>",
+        rotated ? "checked" : "");
+    httpd_resp_sendstr_chunk(req, disp_card);
+
     // --- Firmware-Update-Card (OTA) ---
     httpd_resp_sendstr_chunk(req,
         "<div class=card style='margin-top:16px'>"
@@ -149,6 +165,27 @@ static esp_err_t root_get(httpd_req_t *req)
 
     httpd_resp_sendstr_chunk(req, "</body></html>");
     httpd_resp_sendstr_chunk(req, NULL);   // Ende
+    return ESP_OK;
+}
+
+static esp_err_t display_post(httpd_req_t *req)
+{
+    char body[128];
+    int total = req->content_len < (int)sizeof(body) - 1 ? req->content_len : (int)sizeof(body) - 1;
+    int recvd = total > 0 ? httpd_req_recv(req, body, total) : 0;
+    if (recvd < 0) return ESP_FAIL;
+    body[recvd > 0 ? recvd : 0] = '\0';
+
+    char tmp[8];
+    bool rot = form_field(body, "rot", tmp, sizeof(tmp)) && tmp[0] == '1';
+    config_set_str("rot180", rot ? "1" : "0");
+    display_set_rotation(rot);   // sofort anwenden, kein Neustart noetig
+    ESP_LOGI(TAG, "Anzeige-Drehung: %s", rot ? "180 Grad" : "0 Grad");
+
+    // zurueck zur Startseite
+    httpd_resp_set_status(req, "303 See Other");
+    httpd_resp_set_hdr(req, "Location", "/");
+    httpd_resp_send(req, NULL, 0);
     return ESP_OK;
 }
 
@@ -231,8 +268,10 @@ void web_server_start(void)
     httpd_uri_t root = { .uri = "/", .method = HTTP_GET, .handler = root_get };
     httpd_uri_t save = { .uri = "/save", .method = HTTP_POST, .handler = save_post };
     httpd_uri_t ota  = { .uri = "/ota", .method = HTTP_POST, .handler = ota_post };
+    httpd_uri_t disp = { .uri = "/display", .method = HTTP_POST, .handler = display_post };
     httpd_register_uri_handler(server, &root);
     httpd_register_uri_handler(server, &save);
     httpd_register_uri_handler(server, &ota);
+    httpd_register_uri_handler(server, &disp);
     ESP_LOGI(TAG, "HTTP-Konfig-Server gestartet (Port 80)");
 }

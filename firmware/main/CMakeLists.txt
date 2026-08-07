@@ -2,7 +2,9 @@ idf_component_register(
     SRCS
         "main.c"
         "display.c"
-        "status_screen.c"
+        "slideshow.c"
+        "slides.c"
+        "time_sync.c"
         "config_store.c"
         "network_manager.c"
         "web_server.c"

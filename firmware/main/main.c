@@ -1,7 +1,9 @@
 #include "display.h"
-#include "status_screen.h"
+#include "slideshow.h"
+#include "slides.h"
 #include "config_store.h"
 #include "network_manager.h"
+#include "time_sync.h"
 #include "web_server.h"
 #include "ota_manager.h"
 
@@ -15,23 +17,28 @@ void app_main(void)
     ESP_LOGI(TAG, "esp-infoscreen startet");
     ESP_LOGI(TAG, "PSRAM: %u Bytes", (unsigned)esp_psram_get_size());
 
-    ota_manager_init();   // Boot-Status/laufende Partition loggen
-
-    // Persistenz + Display
+    ota_manager_init();
     config_store_init();
+
     lv_display_t *disp = display_init();
 
-    // Netzwerk VOR dem Status-Screen initialisieren: der Status-Screen fragt
-    // sofort network_manager_get_status() ab (Mutex muss existieren).
-    network_manager_init();
+    // Gespeicherte Anzeige-Drehung anwenden (Deckenmontage 180 Grad)
+    char rot[4];
+    display_set_rotation(config_get_str("rot180", rot, sizeof(rot)) && rot[0] == '1');
 
-    status_screen_create(disp);
+    // Netzwerk VOR den Slides (Slides fragen Netzwerkstatus ab)
+    network_manager_init();
+    time_sync_init();
+
+    // Slideshow aufbauen: Uhr/Datum, Netzwerk, WLAN-Empfang - alle 10 s wechseln
+    slideshow_init(disp);
+    slides_register_all();
+    slideshow_start(10000);
+
+    // Web-Konfig + OTA
     web_server_start();
 
-    // Alles initialisiert -> laufende App als gueltig markieren (Bootloader-
-    // Rollback abbrechen). Kommt eine frisch per OTA geflashte App bis hierher,
-    // gilt sie als funktionsfaehig; stuerzt sie vorher ab, rollt der Bootloader
-    // beim naechsten Neustart auf die vorige App zurueck.
+    // Init erfolgreich -> Rollback abbrechen (frisch geflashte App gilt als ok)
     ota_manager_mark_valid();
 
     ESP_LOGI(TAG, "Init abgeschlossen");
