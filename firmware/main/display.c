@@ -24,10 +24,13 @@ lv_display_t *display_init(bool rot180)
     esp_lcd_rgb_panel_config_t panel_config = {
         .clk_src = LCD_CLK_SRC_PLL160M,
         .data_width = 16,
-        .num_fbs = 2,                              // Doppelpuffer in PSRAM (Anti-Tearing)
-        // KEIN Bounce-Puffer: Bounce-Buffer-Modus und Doppel-Framebuffer-
-        // Anti-Tearing sind konkurrierende Strategien -> zusammen = Flackern.
-        // Octal-PSRAM hat genug Bandbreite fuer den direkten Framebuffer.
+        .num_fbs = 1,                              // 1 Framebuffer in PSRAM
+        // BOUNCE-BUFFER-MODUS (HW-verifiziert noetig): das Panel liest die Pixel
+        // ueber einen kleinen SRAM-Bounce-Puffer statt direkt aus dem PSRAM -
+        // das behebt das Flackern (PSRAM-Bandbreite). Zusaetzlich flusht LVGL
+        // dann ueber esp_lcd_panel_draw_bitmap, wodurch die HW-Spiegelung
+        // (180-Grad-Drehung) tatsaechlich angewendet wird.
+        .bounce_buffer_size_px = DISP_H_RES * 10,
         .dma_burst_size = 64,                      // ersetzt sram/psram_trans_align (IDF >=5.3)
         .de_gpio_num = DISP_PIN_DE,
         .pclk_gpio_num = DISP_PIN_PCLK,
@@ -78,7 +81,10 @@ lv_display_t *display_init(bool rot180)
 
     const lvgl_port_display_cfg_t disp_cfg = {
         .panel_handle = panel,
-        .buffer_size = DISP_H_RES * DISP_V_RES,   // Vollbild (full_refresh)
+        // Teil-Zeichenpuffer (~1/10 Screen) in PSRAM, doppelt. KEIN Vollbild/
+        // full_refresh: im Bounce-Buffer-Modus flusht LVGL ueber draw_bitmap,
+        // dort wird auch die Spiegelung angewendet.
+        .buffer_size = DISP_H_RES * 48,
         .double_buffer = true,
         .hres = DISP_H_RES,
         .vres = DISP_V_RES,
@@ -92,13 +98,12 @@ lv_display_t *display_init(bool rot180)
         },
         .flags = {
             .buff_spiram = true,
-            .full_refresh = true,   // ganzer Screen je Frame -> mit 2 FBs tearing-frei
         },
     };
     const lvgl_port_display_rgb_cfg_t rgb_cfg = {
         .flags = {
-            .bb_mode = false,       // KEIN Bounce-Buffer (siehe Panel-Config oben)
-            .avoid_tearing = true,  // Doppel-Framebuffer-Swap gegen Tearing/Flackern
+            .bb_mode = true,         // Bounce-Buffer-Modus (Flackern weg + Drehung wirkt)
+            .avoid_tearing = false,
         },
     };
     lv_display_t *disp = lvgl_port_add_disp_rgb(&disp_cfg, &rgb_cfg);
