@@ -5,7 +5,9 @@
     installiert dabei bei Bedarf alle Abhaengigkeiten.
 
 .DESCRIPTION
-    Wrapper um PlatformIO. Sorgt selbststaendig dafuer, dass alles vorhanden ist:
+    Wrapper um PlatformIO. Zieht vor jedem Lauf den neuesten Git-Stand
+    (git pull --ff-only, abschaltbar mit -NoUpdate) und sorgt dafuer, dass alles
+    vorhanden ist:
       1. Python 3 (falls noetig via winget, sonst offizieller Installer) -
          Voraussetzung fuer den PlatformIO-Installer.
       2. PlatformIO Core (wird per offiziellem get-platformio.py nachinstalliert,
@@ -24,6 +26,7 @@
 .PARAMETER Monitor      Nach dem Flashen den seriellen Monitor (115200) oeffnen.
 .PARAMETER SkipBuild    Nicht neu bauen, nur flashen.
 .PARAMETER SkipDeps     Abhaengigkeits-Check/-Installation ueberspringen (schneller).
+.PARAMETER NoUpdate     Kein 'git pull' vor dem Bauen (mit lokalem Stand bauen).
 .PARAMETER Erase        Vor dem Flashen den kompletten Flash loeschen (Recovery).
 .PARAMETER MonitorOnly  Nur den seriellen Monitor oeffnen.
 
@@ -38,6 +41,7 @@ param(
     [switch]$Monitor,
     [switch]$SkipBuild,
     [switch]$SkipDeps,
+    [switch]$NoUpdate,
     [switch]$Erase,
     [switch]$MonitorOnly
 )
@@ -166,6 +170,22 @@ function Ensure-Git {
 # Faellt zurueck auf einen Klon des oeffentlichen Repos, wenn das Skript einzeln
 # (ohne das restliche Projekt) kopiert wurde.
 $RepoUrl = 'https://github.com/peterhagelhof7-cmd/esp-infoscreen.git'
+
+# Aktualisiert das Repo, in dem $dir liegt, per 'git pull --ff-only' (best effort:
+# ohne Git / kein Repo / offline / lokale Aenderungen -> nur Hinweis, kein Abbruch).
+# Mit -NoUpdate wird der Schritt uebersprungen.
+function Update-Repo([string]$dir) {
+    if ($NoUpdate) { return }
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) { return }
+    & git -C $dir rev-parse --is-inside-work-tree 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) { return }   # kein Git-Repo -> lokal bauen
+    Write-Host '>> Projekt aktualisieren (git pull --ff-only) ...' -ForegroundColor Cyan
+    & git -C $dir pull --ff-only
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host '   Hinweis: kein Update moeglich (lokale Aenderungen / offline / divergiert) - baue mit lokalem Stand.' -ForegroundColor Yellow
+    }
+}
+
 function Resolve-FirmwareDir {
     $candidates = @(
         (Join-Path $PSScriptRoot '..\firmware'),   # Skript liegt in tools/ (Normalfall)
@@ -174,7 +194,11 @@ function Resolve-FirmwareDir {
         (Get-Location)                               # aktuelles Verzeichnis IST firmware/
     )
     foreach ($c in $candidates) {
-        if (Test-Path (Join-Path $c 'platformio.ini')) { return (Resolve-Path $c).Path }
+        if (Test-Path (Join-Path $c 'platformio.ini')) {
+            $p = (Resolve-Path $c).Path
+            Update-Repo $p     # vor jedem Lauf auf den neuesten Git-Stand ziehen
+            return $p
+        }
     }
     # Nicht gefunden -> Skript wurde einzeln kopiert. Repo klonen.
     Write-Host 'firmware/ nicht gefunden - hole das Projekt-Repo ...' -ForegroundColor Yellow
@@ -182,8 +206,10 @@ function Resolve-FirmwareDir {
     $dest = Join-Path $PSScriptRoot 'esp-infoscreen'
     $destFw = Join-Path $dest 'firmware'
     if (Test-Path (Join-Path $destFw 'platformio.ini')) {
-        Write-Host "  Vorhandenen Klon aktualisieren: $dest" -ForegroundColor DarkGray
-        & git -C $dest pull --ff-only | Out-Null
+        if (-not $NoUpdate) {
+            Write-Host "  Vorhandenen Klon aktualisieren: $dest" -ForegroundColor DarkGray
+            & git -C $dest pull --ff-only | Out-Null
+        }
     } else {
         Write-Host "  Klone $RepoUrl -> $dest" -ForegroundColor DarkGray
         & git clone --depth 1 $RepoUrl $dest
