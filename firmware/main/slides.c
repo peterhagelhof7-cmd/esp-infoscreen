@@ -7,9 +7,11 @@
 #include "termine.h"
 #include "dwd.h"
 #include "spessart.h"
+#include "owm.h"
 
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
 #include <time.h>
 #include "lvgl.h"
 
@@ -90,6 +92,54 @@ static void clock_build(lv_obj_t *p)
 }
 
 static const slide_t SLIDE_CLOCK = { "Uhrzeit & Datum", clock_build, clock_update };
+
+// ===================== Slide: Wetter (OpenWeatherMap) ========================
+static void owm_build(lv_obj_t *p)
+{
+    owm_data_t d; owm_get(&d);
+
+    if (!d.has_key) {
+        lv_obj_t *l = lv_label_create(p);
+        lv_obj_set_style_text_font(l, FONT_MED, 0);
+        lv_obj_set_style_text_color(l, lv_color_hex(0xb0b8d0), 0);
+        lv_label_set_text(l, "Kein API-Key (Einstellungen)");
+        lv_obj_center(l);
+        return;
+    }
+    if (!d.valid) {
+        lv_obj_t *l = lv_label_create(p);
+        lv_obj_set_style_text_font(l, FONT_MED, 0);
+        lv_obj_set_style_text_color(l, lv_color_hex(0xb0b8d0), 0);
+        lv_label_set_text(l, "Wetter nicht verfuegbar");
+        lv_obj_center(l);
+        return;
+    }
+
+    char temp[24]; snprintf(temp, sizeof(temp), "%d \xc2\xb0""C", d.temp);
+    lv_obj_t *lt = lv_label_create(p);
+    lv_obj_set_style_text_font(lt, FONT_BIG, 0);
+    lv_obj_set_style_text_color(lt, lv_color_hex(0xffffff), 0);
+    lv_label_set_text(lt, temp);
+    lv_obj_align(lt, LV_ALIGN_CENTER, 0, -80);
+
+    char desc[64]; de_ascii(d.desc, desc, sizeof(desc));
+    if (desc[0]) desc[0] = (char)toupper((unsigned char)desc[0]);
+    lv_obj_t *ld = lv_label_create(p);
+    lv_obj_set_style_text_font(ld, FONT_MED, 0);
+    lv_obj_set_style_text_color(ld, lv_color_hex(0x8ab4f8), 0);
+    lv_label_set_text(ld, desc);
+    lv_obj_align(ld, LV_ALIGN_CENTER, 0, -20);
+
+    char more[64];
+    snprintf(more, sizeof(more), "gefuehlt %d \xc2\xb0""C  -  %d%% rF  -  Wind %d km/h", d.feels, d.humidity, d.wind_kmh);
+    lv_obj_t *lm = lv_label_create(p);
+    lv_obj_set_style_text_font(lm, FONT_MED, 0);
+    lv_obj_set_style_text_color(lm, lv_color_hex(0xb0b8d0), 0);
+    lv_label_set_text(lm, more);
+    lv_obj_align(lm, LV_ALIGN_CENTER, 0, 40);
+}
+
+static const slide_t SLIDE_OWM = { "Wetter Johannesberg", owm_build, NULL };
 
 // ========================= Slide 2: Netzwerk / IP ============================
 // Aktualisiert nur bei Zustandswechsel (LVGL zeichnet gleichen Text ohnehin
@@ -262,11 +312,13 @@ static void calendar_build(lv_obj_t *p)
 {
     char today[11]; time_today_str(today, sizeof(today));
 
-    cal_event_t ev[40];
+    // Statisch (laeuft nur im LVGL-Task, nicht reentrant) -> spart Stack.
+    static cal_event_t ev[40];
+    static termine_entry_t te[40];
+    static muell_entry_t me[16];
     int n = 0;
 
     // Nutzer-Termine
-    termine_entry_t te[40];
     int tn = termine_get_all(te, 40);
     for (int i = 0; i < tn && n < 40; i++) {
         if (today[0] && strcmp(te[i].date, today) < 0) continue;   // Vergangenes weglassen
@@ -277,7 +329,6 @@ static void calendar_build(lv_obj_t *p)
         n++;
     }
     // Muellabfuhr
-    muell_entry_t me[16];
     int mn = muell_get(me, 16);
     for (int i = 0; i < mn && n < 40; i++) {
         strncpy(ev[n].date, me[i].day, sizeof(ev[0].date) - 1); ev[n].date[10] = '\0';
@@ -384,6 +435,7 @@ static const slide_t SLIDE_SPESSART = { "Spessartwetter", spessart_build, NULL }
 void slides_register_all(void)
 {
     slideshow_add(&SLIDE_CLOCK);
+    slideshow_add(&SLIDE_OWM);
     slideshow_add(&SLIDE_CALENDAR);
     slideshow_add(&SLIDE_DWD);
     slideshow_add(&SLIDE_SPESSART);

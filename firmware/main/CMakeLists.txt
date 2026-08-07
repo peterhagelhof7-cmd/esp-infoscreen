@@ -15,6 +15,7 @@ idf_component_register(
         "termine.c"
         "dwd.c"
         "spessart.c"
+        "owm.c"
     INCLUDE_DIRS
         "."
     REQUIRES

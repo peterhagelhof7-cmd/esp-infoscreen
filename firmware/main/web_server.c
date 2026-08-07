@@ -192,6 +192,21 @@ static esp_err_t root_get(httpd_req_t *req)
         fbesc);
     httpd_resp_sendstr_chunk(req, fb_card);
 
+    // --- OpenWeatherMap-Card (API-Key) ---
+    char owmkey[48] = { 0 };
+    bool has_key = config_get_str("owm_key", owmkey, sizeof(owmkey)) && owmkey[0];
+    char owm_card[420];
+    snprintf(owm_card, sizeof(owm_card),
+        "<div class=card style='margin-top:16px'>"
+        "<h1>Wetter</h1><div class=sub>OpenWeatherMap API-Key</div>"
+        "<form method=post action=/owm>"
+        "<input type=text name=key placeholder='%s' autocomplete=off>"
+        "<button type=submit>Speichern</button></form>"
+        "<div class=st>Kostenloser Key von openweathermap.org. %s</div></div>",
+        has_key ? "gesetzt - zum Aendern neuen Key eingeben" : "noch nicht gesetzt",
+        has_key ? "Aktuell konfiguriert." : "");
+    httpd_resp_sendstr_chunk(req, owm_card);
+
     // --- Firmware-Update-Card (OTA) ---
     httpd_resp_sendstr_chunk(req,
         "<div class=card style='margin-top:16px'>"
@@ -270,6 +285,22 @@ static esp_err_t tdel_post(httpd_req_t *req)
 
     char idx[8] = { 0 };
     if (form_field(body, "i", idx, sizeof(idx))) termine_delete(atoi(idx));
+    return redirect_root(req);
+}
+
+static esp_err_t owm_post(httpd_req_t *req)
+{
+    char body[128];
+    int total = req->content_len < (int)sizeof(body) - 1 ? req->content_len : (int)sizeof(body) - 1;
+    int recvd = total > 0 ? httpd_req_recv(req, body, total) : 0;
+    if (recvd < 0) return ESP_FAIL;
+    body[recvd > 0 ? recvd : 0] = '\0';
+
+    char key[48] = { 0 };
+    if (form_field(body, "key", key, sizeof(key)) && key[0]) {
+        config_set_str("owm_key", key);   // nur bei nicht-leerer Eingabe ueberschreiben
+        ESP_LOGI(TAG, "OpenWeatherMap-Key gesetzt");
+    }
     return redirect_root(req);
 }
 
@@ -376,6 +407,7 @@ void web_server_start(void)
     httpd_uri_t fb   = { .uri = "/fritzbox", .method = HTTP_POST, .handler = fritzbox_post };
     httpd_uri_t tadd = { .uri = "/tadd", .method = HTTP_POST, .handler = tadd_post };
     httpd_uri_t tdel = { .uri = "/tdel", .method = HTTP_POST, .handler = tdel_post };
+    httpd_uri_t owm  = { .uri = "/owm", .method = HTTP_POST, .handler = owm_post };
     httpd_register_uri_handler(server, &root);
     httpd_register_uri_handler(server, &save);
     httpd_register_uri_handler(server, &ota);
@@ -383,5 +415,6 @@ void web_server_start(void)
     httpd_register_uri_handler(server, &fb);
     httpd_register_uri_handler(server, &tadd);
     httpd_register_uri_handler(server, &tdel);
+    httpd_register_uri_handler(server, &owm);
     ESP_LOGI(TAG, "HTTP-Konfig-Server gestartet (Port 80)");
 }

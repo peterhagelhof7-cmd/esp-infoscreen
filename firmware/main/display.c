@@ -76,7 +76,8 @@ lv_display_t *display_init(bool rot180)
 
     // --- LVGL-Port initialisieren ---
     ESP_LOGI(TAG, "Initialisiere LVGL-Port");
-    const lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();
+    lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();
+    lvgl_cfg.task_stack = 10240;   // Slide-Builds (Kalender/JSON) brauchen mehr Stack
     ESP_ERROR_CHECK(lvgl_port_init(&lvgl_cfg));
 
     const lvgl_port_display_cfg_t disp_cfg = {

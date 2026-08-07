@@ -10,6 +10,7 @@
 #include "muell.h"
 #include "dwd.h"
 #include "spessart.h"
+#include "owm.h"
 
 #include "esp_log.h"
 #include "esp_psram.h"
@@ -36,6 +37,7 @@ void app_main(void)
     muell_init();      // MyMuell/jumomind
     dwd_init();        // Bright Sky (DWD-Warnungen)
     spessart_init();   // spessartwetter.de
+    owm_init();        // OpenWeatherMap
 
     // Slideshow aufbauen: Uhr/Datum, Netzwerk, WLAN-Empfang - alle 10 s wechseln
     slideshow_init(disp);
