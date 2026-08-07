@@ -122,6 +122,8 @@ void network_manager_init(void)
 
 void network_manager_get_status(net_status_t *out)
 {
+    // Defensiv: falls vor network_manager_init() abgefragt (Mutex noch NULL).
+    if (!s_lock) { memset(out, 0, sizeof(*out)); out->mode = NET_MODE_BOOT; return; }
     xSemaphoreTake(s_lock, portMAX_DELAY);
     *out = s_status;
     xSemaphoreGive(s_lock);

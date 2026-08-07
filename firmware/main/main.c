@@ -20,10 +20,12 @@ void app_main(void)
     // Persistenz + Display
     config_store_init();
     lv_display_t *disp = display_init();
-    status_screen_create(disp);
 
-    // Netzwerk: STA mit gespeicherten Daten, sonst Installer-AP; Web-Konfig + OTA
+    // Netzwerk VOR dem Status-Screen initialisieren: der Status-Screen fragt
+    // sofort network_manager_get_status() ab (Mutex muss existieren).
     network_manager_init();
+
+    status_screen_create(disp);
     web_server_start();
 
     // Alles initialisiert -> laufende App als gueltig markieren (Bootloader-
