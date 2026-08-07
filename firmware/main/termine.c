@@ -3,7 +3,9 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
 #include "cJSON.h"
+#include "esp_timer.h"
 #include "esp_log.h"
 
 static const char *TAG = "termine";
@@ -77,4 +79,44 @@ void termine_delete(int idx)
         save_array(arr);
     }
     cJSON_Delete(arr);
+}
+
+int termine_purge_past(void)
+{
+    time_t now = time(NULL);
+    struct tm tm; localtime_r(&now, &tm);
+    if (tm.tm_year <= 120) return 0;   // Zeit noch nicht synchronisiert
+    char today[16];
+    strftime(today, sizeof(today), "%Y-%m-%d", &tm);
+
+    cJSON *arr = load_array();
+    int removed = 0, i = 0;
+    while (i < cJSON_GetArraySize(arr)) {
+        cJSON *e = cJSON_GetArrayItem(arr, i);
+        cJSON *d = cJSON_GetObjectItem(e, "d");
+        if (cJSON_IsString(d) && strcmp(d->valuestring, today) < 0) {
+            cJSON_DeleteItemFromArray(arr, i);   // vergangen -> raus (Index nicht erhoehen)
+            removed++;
+        } else {
+            i++;
+        }
+    }
+    if (removed) { save_array(arr); ESP_LOGI(TAG, "%d vergangene Termine geloescht", removed); }
+    cJSON_Delete(arr);
+    return removed;
+}
+
+static void purge_timer_cb(void *arg)
+{
+    (void)arg;
+    termine_purge_past();
+}
+
+void termine_init(void)
+{
+    termine_purge_past();   // sofort (falls Zeit schon da), sonst greift der Timer
+    const esp_timer_create_args_t ta = { .callback = purge_timer_cb, .name = "termine_purge" };
+    esp_timer_handle_t th;
+    if (esp_timer_create(&ta, &th) == ESP_OK)
+        esp_timer_start_periodic(th, (uint64_t)30 * 60 * 1000000);   // alle 30 min
 }

@@ -18,3 +18,11 @@ bool termine_add(const char *date, const char *time, const char *title);
 
 // Termin an Position idx loeschen.
 void termine_delete(int idx);
+
+// Startet die automatische Aufraeumung (loescht vergangene Termine beim Start
+// und danach periodisch). Braucht keine gueltige Zeit beim Aufruf.
+void termine_init(void);
+
+// Alle Termine mit Datum vor heute loeschen. Liefert die Anzahl entfernter
+// Eintraege (0, wenn die Zeit noch nicht synchronisiert ist).
+int termine_purge_past(void);

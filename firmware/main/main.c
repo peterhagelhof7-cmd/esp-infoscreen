@@ -9,6 +9,7 @@
 #include "fritzbox.h"
 #include "http_util.h"
 #include "muell.h"
+#include "termine.h"
 #include "dwd.h"
 #include "spessart.h"
 #include "owm.h"
@@ -42,6 +43,7 @@ void app_main(void)
     dwd_init();        // Bright Sky (DWD-Warnungen)
     spessart_init();   // spessartwetter.de
     owm_init();        // OpenWeatherMap
+    termine_init();    // Auto-Aufraeumung vergangener Termine
     telegram_init();   // Telegram-Bot / Message Board
 
     // Slideshow aufbauen: Uhr/Datum, Netzwerk, WLAN-Empfang - alle 10 s wechseln
