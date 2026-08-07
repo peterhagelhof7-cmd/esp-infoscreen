@@ -166,15 +166,17 @@ static void build_internet(char *out, size_t len)
 // naechste zwei Termine (Nutzer-Termine + Muellabfuhr), nach Datum sortiert
 static void build_termine(char *out, size_t len)
 {
+    // static: build_termine laeuft nur im Telegram-Task (nicht reentrant) ->
+    // haelt den Task-Stack frei (grosse Arrays sonst = Stack-Overflow).
     typedef struct { char date[11]; char label[64]; } ev_t;
-    ev_t ev[56];
+    static ev_t ev[56];
     int n = 0;
     char today[16] = { 0 };
     time_t now = time(NULL);
     struct tm tm; localtime_r(&now, &tm);
     if (tm.tm_year > 120) strftime(today, sizeof(today), "%Y-%m-%d", &tm);
 
-    termine_entry_t te[40];
+    static termine_entry_t te[40];
     int tn = termine_get_all(te, 40);
     for (int i = 0; i < tn && n < 56; i++) {
         if (today[0] && strcmp(te[i].date, today) < 0) continue;
@@ -183,7 +185,7 @@ static void build_termine(char *out, size_t len)
         else               snprintf(ev[n].label, sizeof(ev[n].label), "%s", te[i].title);
         n++;
     }
-    muell_entry_t me[16];
+    static muell_entry_t me[16];
     int mn = muell_get(me, 16);
     for (int i = 0; i < mn && n < 56; i++) {
         strncpy(ev[n].date, me[i].day, 10); ev[n].date[10] = '\0';
@@ -433,5 +435,5 @@ static void poll_task(void *arg)
 void telegram_init(void)
 {
     s_lock = xSemaphoreCreateMutex();
-    xTaskCreate(poll_task, "telegram", 8192, NULL, 4, NULL);
+    xTaskCreate(poll_task, "telegram", 10240, NULL, 4, NULL);
 }
