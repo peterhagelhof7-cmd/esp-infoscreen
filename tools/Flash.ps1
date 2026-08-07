@@ -6,11 +6,13 @@
 
 .DESCRIPTION
     Wrapper um PlatformIO. Sorgt selbststaendig dafuer, dass alles vorhanden ist:
-      1. PlatformIO Core (wird per offiziellem Installer nachinstalliert, wenn es
-         fehlt - benoetigt Python 3).
-      2. Plattform espressif32 + ESP-IDF-Toolchain + deklarierte Bibliotheken
+      1. Python 3 (falls noetig via winget, sonst offizieller Installer) -
+         Voraussetzung fuer den PlatformIO-Installer.
+      2. PlatformIO Core (wird per offiziellem get-platformio.py nachinstalliert,
+         wenn es fehlt).
+      3. Plattform espressif32 + ESP-IDF-Toolchain + deklarierte Bibliotheken
          (via `pio pkg install`).
-      3. ESP-IDF-Managed-Components (lvgl, esp_lvgl_port) - werden beim ersten
+      4. ESP-IDF-Managed-Components (lvgl, esp_lvgl_port) - werden beim ersten
          Build vom IDF-Component-Manager geladen.
     Danach: bauen, flashen (nativer USB-Serial-JTAG, VID 303A / PID 1001) und auf
     Wunsch den seriellen Monitor oeffnen.
@@ -53,24 +55,70 @@ function Get-PlatformIO {
     return $null
 }
 
-function Install-PlatformIO {
-    Write-Host 'PlatformIO Core nicht gefunden - installiere es ...' -ForegroundColor Yellow
+# PATH in der laufenden Session aus Machine+User neu laden (nach einer Installation
+# taucht das frisch installierte Programm sonst nicht auf).
+function Update-SessionPath {
+    $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+    $user    = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $env:Path = (($machine, $user) -join ';')
+}
 
-    # Python 3 suchen (fuer den offiziellen Installer noetig)
-    $python = $null
+# Liefert das Python-3-Kommando als Array (@(exe) bzw. @(py.exe,'-3')) oder $null.
+function Find-Python {
     foreach ($cand in @('py', 'python', 'python3')) {
         $c = Get-Command $cand -ErrorAction SilentlyContinue
         if ($c) {
-            # 'py' braucht -3; bei python/python3 direkt
-            if ($cand -eq 'py') { $python = @($c.Source, '-3') } else { $python = @($c.Source) }
-            break
+            # Microsoft-Store-Alias 'python.exe' (0-Byte-Stub) aussortieren
+            if ($c.Source -like '*\WindowsApps\*' -and $cand -ne 'py') { continue }
+            if ($cand -eq 'py') { return @($c.Source, '-3') } else { return @($c.Source) }
         }
     }
-    if (-not $python) {
-        Write-Host 'Kein Python 3 gefunden. Bitte Python 3 installieren (https://www.python.org/downloads/)' -ForegroundColor Red
-        Write-Host 'oder PlatformIO manuell einrichten (https://platformio.org/install).' -ForegroundColor Red
-        exit 1
+    return $null
+}
+
+# Stellt Python 3 sicher - installiert es bei Bedarf (winget, sonst Direkt-Download).
+function Ensure-Python {
+    $python = Find-Python
+    if ($python) { return $python }
+
+    Write-Host 'Python 3 nicht gefunden - installiere es ...' -ForegroundColor Yellow
+
+    # 1. Bevorzugt winget (auf Windows 10/11 vorhanden), per-User, ohne Admin
+    $winget = Get-Command winget -ErrorAction SilentlyContinue
+    if ($winget) {
+        Write-Host '  Installiere Python 3 via winget (Python.Python.3.12) ...' -ForegroundColor DarkGray
+        & winget install --id Python.Python.3.12 -e --source winget --scope user `
+            --accept-package-agreements --accept-source-agreements
+        Update-SessionPath
+        $python = Find-Python
+        if ($python) { Write-Host "  Python installiert: $($python[0])" -ForegroundColor Green; return $python }
+        Write-Host '  winget-Installation lief, Python aber (noch) nicht im PATH - versuche Direkt-Download ...' -ForegroundColor Yellow
     }
+
+    # 2. Fallback: offiziellen Python-Installer herunterladen und still (per-User) installieren
+    $pyVer = '3.12.7'
+    $exe = Join-Path $env:TEMP "python-$pyVer-amd64.exe"
+    $url = "https://www.python.org/ftp/python/$pyVer/python-$pyVer-amd64.exe"
+    Write-Host "  Lade Python-Installer: $url" -ForegroundColor DarkGray
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    Invoke-WebRequest -Uri $url -OutFile $exe -UseBasicParsing
+    Write-Host '  Installiere Python (still, per-User, PATH setzen) ...' -ForegroundColor DarkGray
+    Start-Process -FilePath $exe -ArgumentList '/quiet InstallAllUsers=0 PrependPath=1 Include_pip=1 Include_launcher=1' -Wait
+    Update-SessionPath
+    $python = Find-Python
+    if ($python) { Write-Host "  Python installiert: $($python[0])" -ForegroundColor Green; return $python }
+
+    Write-Host 'Python konnte nicht automatisch installiert werden. Bitte Python 3 manuell installieren:' -ForegroundColor Red
+    Write-Host '  https://www.python.org/downloads/  (beim Setup "Add python.exe to PATH" anhaken)' -ForegroundColor Red
+    Write-Host 'danach Terminal neu starten und dieses Skript erneut ausfuehren.' -ForegroundColor Red
+    exit 1
+}
+
+function Install-PlatformIO {
+    Write-Host 'PlatformIO Core nicht gefunden - installiere es ...' -ForegroundColor Yellow
+
+    # Python 3 sicherstellen (fuer den offiziellen PlatformIO-Installer noetig)
+    $python = Ensure-Python
 
     $installer = Join-Path $env:TEMP 'get-platformio.py'
     $url = 'https://raw.githubusercontent.com/platformio/platformio-core-installer/master/get-platformio.py'
