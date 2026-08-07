@@ -7,6 +7,7 @@
 #include "web_server.h"
 #include "ota_manager.h"
 #include "fritzbox.h"
+#include "http_util.h"
 #include "muell.h"
 #include "dwd.h"
 #include "spessart.h"
@@ -33,6 +34,7 @@ void app_main(void)
     // Netzwerk VOR den Slides (Slides fragen Netzwerkstatus ab)
     network_manager_init();
     time_sync_init();
+    http_util_init();  // serialisiert HTTPS-Abrufe (nur 1 TLS-Kontext gleichzeitig)
     fritzbox_init();   // UPnP/IGD
     muell_init();      // MyMuell/jumomind
     dwd_init();        // Bright Sky (DWD-Warnungen)

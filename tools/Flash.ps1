@@ -29,6 +29,8 @@
 .PARAMETER NoUpdate     Kein 'git pull' vor dem Bauen (mit lokalem Stand bauen).
 .PARAMETER Erase        Vor dem Flashen den kompletten Flash loeschen (Recovery).
 .PARAMETER MonitorOnly  Nur den seriellen Monitor oeffnen.
+.PARAMETER NoWait       Nicht auf das Board warten (sonst wartet es vor dem Flashen,
+                        bis ein passender USB-Serial-Port erscheint).
 
 .EXAMPLE
     .\Flash.ps1 -Monitor
@@ -43,7 +45,8 @@ param(
     [switch]$SkipDeps,
     [switch]$NoUpdate,
     [switch]$Erase,
-    [switch]$MonitorOnly
+    [switch]$MonitorOnly,
+    [switch]$NoWait
 )
 
 $ErrorActionPreference = 'Stop'
@@ -245,8 +248,34 @@ function Invoke-Pio([string[]]$PioArgs, [string]$What) {
 $portArgs = @(); if ($Port) { $portArgs = @('--upload-port', $Port) }
 $monPortArgs = @(); if ($Port) { $monPortArgs = @('--port', $Port) }
 
+# --- Auf angeschlossenes Board warten ----------------------------------------
+# Sucht COM-Ports mit den ueblichen ESP-Programmier-USB-IDs (Espressif nativer
+# USB, CP210x, CH340, FTDI). Wartet, bis eines erscheint (mit -NoWait aus).
+function Get-EspComPorts {
+    Get-CimInstance Win32_PnPEntity -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '\(COM\d+\)' -and $_.PNPDeviceID -match 'VID_(303A|10C4|1A86|0403)' } |
+        ForEach-Object { if ($_.Name -match '\((COM\d+)\)') { $Matches[1] } }
+}
+function Wait-ForBoard([int]$timeoutSec = 180) {
+    if ($NoWait) { return }
+    if (Get-EspComPorts) { return }   # schon angeschlossen
+    Write-Host 'Warte auf das Board - bitte per USB anschliessen (Strg+C zum Abbrechen) ...' -ForegroundColor Yellow
+    $deadline = (Get-Date).AddSeconds($timeoutSec)
+    while ((Get-Date) -lt $deadline) {
+        Start-Sleep -Milliseconds 800
+        $p = Get-EspComPorts
+        if ($p) {
+            Write-Host "  Board erkannt: $($p -join ', ')" -ForegroundColor Green
+            Start-Sleep -Milliseconds 700   # kurz einschwingen lassen
+            return
+        }
+    }
+    Write-Host '  Timeout - versuche trotzdem zu flashen.' -ForegroundColor Yellow
+}
+
 # --- Nur-Monitor-Modus -------------------------------------------------------
 if ($MonitorOnly) {
+    Wait-ForBoard
     Write-Host 'Serieller Monitor (Strg+C zum Beenden) ...' -ForegroundColor Green
     & $pio device monitor -e $envName @monPortArgs
     exit $LASTEXITCODE
@@ -269,7 +298,8 @@ if (-not $SkipBuild) {
     Invoke-Pio @('run', '-e', $envName) 'Firmware bauen'
 }
 
-# --- Flashen -----------------------------------------------------------------
+# --- Auf Board warten, dann flashen ------------------------------------------
+Wait-ForBoard
 Invoke-Pio (@('run', '-e', $envName, '-t', 'upload') + $portArgs) 'Firmware flashen'
 Write-Host 'Fertig geflasht.' -ForegroundColor Green
 
