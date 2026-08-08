@@ -255,6 +255,15 @@ int network_manager_scan(net_ap_t *list, int max)
     esp_err_t rerr = esp_wifi_scan_get_ap_records(&num, recs);
     if (rerr != ESP_OK) { ESP_LOGW(TAG, "get_ap_records: %s", esp_err_to_name(rerr)); free(recs); return 0; }
 
+    // Alle gefundenen APs protokollieren (zeigt gleiche SSID auf mehreren
+    // Kanaelen/BSSIDs = Mesh -> wird unten zu einem Eintrag zusammengefasst).
+    for (int i = 0; i < num; i++) {
+        ESP_LOGI(TAG, "  AP %d: '%s' Kanal %d %d dBm BSSID %02x:%02x:%02x:%02x:%02x:%02x",
+                 i, recs[i].ssid, recs[i].primary, recs[i].rssi,
+                 recs[i].bssid[0], recs[i].bssid[1], recs[i].bssid[2],
+                 recs[i].bssid[3], recs[i].bssid[4], recs[i].bssid[5]);
+    }
+
     int n = 0;
     for (int i = 0; i < num && n < max; i++) {
         if (recs[i].ssid[0] == '\0') continue;

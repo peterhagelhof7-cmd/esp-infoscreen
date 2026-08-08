@@ -55,7 +55,9 @@ lv_display_t *display_init(bool rot180)
         // das behebt das Flackern (PSRAM-Bandbreite). Zusaetzlich flusht LVGL
         // dann ueber esp_lcd_panel_draw_bitmap, wodurch die HW-Spiegelung
         // (180-Grad-Drehung) tatsaechlich angewendet wird.
-        .bounce_buffer_size_px = DISP_H_RES * 10,
+        // Groesserer Bounce-Puffer (internes SRAM) -> mehr Reserve gegen PSRAM-
+        // Bandbreiten-Aussetzer (WLAN/TLS) -> weniger DMA-Underrun-Artefakte.
+        .bounce_buffer_size_px = DISP_H_RES * 20,
         .dma_burst_size = 64,                      // ersetzt sram/psram_trans_align (IDF >=5.3)
         .de_gpio_num = DISP_PIN_DE,
         .pclk_gpio_num = DISP_PIN_PCLK,
