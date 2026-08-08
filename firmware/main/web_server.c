@@ -7,6 +7,7 @@
 #include "slides.h"
 #include "telegram.h"
 #include "muell.h"
+#include "sysstatus.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -311,6 +312,17 @@ static esp_err_t settings_get(httpd_req_t *req)
         "x.onload=function(){s.textContent=(x.status==200)?'OK - Ger\xc3\xa4t startet neu.':'Fehler: '+x.responseText;};"
         "x.onerror=function(){s.textContent='Upload-Fehler';};x.send(f);}"
         "</script>");
+
+    // --- Status-Card (Uptime, Heap, PSRAM, WLAN, Firmware) ---
+    {
+        char status[240]; sysstatus_text(status, sizeof(status));
+        char status_card[420];
+        snprintf(status_card, sizeof(status_card),
+            "<div class=card style='margin-top:16px'><h1>Status</h1>"
+            "<pre style='white-space:pre-wrap;margin:0;font-size:14px;color:#b0b8d0'>%s</pre></div>",
+            status);
+        httpd_resp_sendstr_chunk(req, status_card);
+    }
 
     // --- System-Card (Einstellungen laden/speichern, Werksreset, Neustart) ---
     httpd_resp_sendstr_chunk(req,

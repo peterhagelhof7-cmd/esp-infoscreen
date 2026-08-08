@@ -17,6 +17,7 @@ idf_component_register(
         "spessart.c"
         "owm.c"
         "telegram.c"
+        "sysstatus.c"
         "fonts/montserrat_de_14.c"
         "fonts/montserrat_de_28.c"
         "fonts/montserrat_de_48.c"
@@ -34,6 +35,7 @@ idf_component_register(
         esp_psram
         driver
         app_update
+        esp_app_format
         esp_partition
         esp-tls
         espressif__cjson

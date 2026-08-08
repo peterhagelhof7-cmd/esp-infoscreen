@@ -6,6 +6,7 @@
 #include "termine.h"
 #include "muell.h"
 #include "dwd.h"
+#include "sysstatus.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -268,6 +269,7 @@ static void send_help(void)
         "\xE2\x80\xA2 Wetter \xE2\x80\x93 aktuelle Spessartwetter-Werte\n"
         "\xE2\x80\xA2 internet \xE2\x80\x93 Internet-/Fritzbox-Daten\n"
         "\xE2\x80\xA2 termin \xE2\x80\x93 die n\xC3\xA4""chsten 2 Termine\n"
+        "\xE2\x80\xA2 status \xE2\x80\x93 Uptime / Heap / WLAN\n"
         "\xE2\x80\xA2 neu termin JJJJ-MM-TT Text \xE2\x80\x93 Termin anlegen",
         s_botname[0] ? s_botname : "bot");
     telegram_send(msg);
@@ -307,6 +309,10 @@ static void handle_command(const char *text)
     if (contains_ci(low, "termin")) {
         char b[200]; build_termine(b, sizeof(b));
         o += snprintf(reply + o, sizeof(reply) - o, "%s%s", any ? "\n" : "", b); any = true;
+    }
+    if (contains_ci(low, "status")) {
+        char b[240]; sysstatus_text(b, sizeof(b));
+        o += snprintf(reply + o, sizeof(reply) - o, "%s\xF0\x9F\x93\x8A %s", any ? "\n" : "", b); any = true;
     }
     if (!any) send_help();          // Erwaehnung ohne Kommando -> Hilfe
     else      telegram_send(reply);
