@@ -251,12 +251,26 @@ function Invoke-Pio([string[]]$PioArgs, [string]$What) {
 # wirken nicht). Erkennung ueber einen INHALTS-Hash (nicht mtime, der nach einem
 # Fehlbuild bereits "aktuell" sein kann) mit Stamp-Datei -> heilt auch den bereits
 # verklemmten Zustand beim naechsten Lauf selbst.
-$DefaultsStamp = Join-Path $firmwareDir '.pio\sdkconfig.defaults.stamp'
+$DefaultsStamp = Join-Path $firmwareDir '.pio\reconfigure.stamp'
 
+# Hash ueber alle Dateien, deren Aenderung einen sauberen Reconfigure braucht:
+# sdkconfig.defaults (Kconfig/Linker) UND main/idf_component.yml (Managed
+# Components) -- beide werden von PlatformIO/espidf sonst nicht zuverlaessig
+# in .pio/build nachgezogen.
 function Get-DefaultsHash {
-    $defaults = Join-Path $firmwareDir 'sdkconfig.defaults'
-    if (-not (Test-Path $defaults)) { return '' }
-    return (Get-FileHash -Algorithm SHA256 -Path $defaults).Hash
+    $files = @(
+        (Join-Path $firmwareDir 'sdkconfig.defaults'),
+        (Join-Path $firmwareDir 'main\idf_component.yml')
+    )
+    $acc = ''
+    foreach ($f in $files) {
+        if (Test-Path $f) { $acc += (Get-FileHash -Algorithm SHA256 -Path $f).Hash }
+    }
+    if ($acc -eq '') { return '' }
+    # Hash der zusammengesetzten Hashes -> ein stabiler Stempel
+    $bytes = [System.Text.Encoding]::ASCII.GetBytes($acc)
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    return -join ($sha.ComputeHash($bytes) | ForEach-Object { $_.ToString('x2') })
 }
 
 function Ensure-CleanConfig {
@@ -268,10 +282,14 @@ function Ensure-CleanConfig {
 
     $generated = Join-Path $firmwareDir "sdkconfig.$envName"
     $buildDir  = Join-Path $firmwareDir '.pio\build'
+    $managed   = Join-Path $firmwareDir 'managed_components'
+    $lock      = Join-Path $firmwareDir 'dependencies.lock'
     if ((Test-Path $generated) -or (Test-Path $buildDir)) {
-        Write-Host '>> sdkconfig.defaults geaendert - erzwinge sauberen Reconfigure (kann laenger dauern) ...' -ForegroundColor Cyan
+        Write-Host '>> Build-Konfig geaendert (sdkconfig.defaults / idf_component.yml) - sauberer Reconfigure (kann laenger dauern) ...' -ForegroundColor Cyan
         Remove-Item -Force   $generated -ErrorAction SilentlyContinue
         Remove-Item -Recurse -Force $buildDir -ErrorAction SilentlyContinue
+        Remove-Item -Recurse -Force $managed  -ErrorAction SilentlyContinue
+        Remove-Item -Force   $lock     -ErrorAction SilentlyContinue
     }
 }
 
