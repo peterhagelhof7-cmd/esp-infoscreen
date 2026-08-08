@@ -244,6 +244,29 @@ function Invoke-Pio([string[]]$PioArgs, [string]$What) {
     }
 }
 
+# Erzwingt einen sauberen Reconfigure, wenn sich sdkconfig.defaults geaendert hat
+# (z.B. nach git pull). Sonst bleiben die generierte sdkconfig UND die Linker-
+# Skripte in .pio/build stale -> Linker-Fehler "undefined _ext_ram_bss_start" bzw.
+# "unplaced orphan section .bss..." (neue Kconfig-Optionen wirken nicht).
+function Ensure-CleanConfig {
+    $defaults  = Join-Path $firmwareDir 'sdkconfig.defaults'
+    $generated = Join-Path $firmwareDir "sdkconfig.$envName"
+    $buildDir  = Join-Path $firmwareDir '.pio\build'
+    if (-not (Test-Path $defaults)) { return }
+
+    $needClean = $false
+    if (Test-Path $generated) {
+        if ((Get-Item $defaults).LastWriteTimeUtc -gt (Get-Item $generated).LastWriteTimeUtc) { $needClean = $true }
+    } elseif (Test-Path $buildDir) {
+        $needClean = $true   # Build vorhanden, aber generierte Config fehlt -> vorsichtshalber sauber
+    }
+    if (-not $needClean) { return }
+
+    Write-Host '>> sdkconfig.defaults hat sich geaendert - erzwinge sauberen Reconfigure ...' -ForegroundColor Cyan
+    Remove-Item -Force   $generated -ErrorAction SilentlyContinue
+    Remove-Item -Recurse -Force $buildDir -ErrorAction SilentlyContinue
+}
+
 # Port-Argumente
 $portArgs = @(); if ($Port) { $portArgs = @('--upload-port', $Port) }
 $monPortArgs = @(); if ($Port) { $monPortArgs = @('--port', $Port) }
@@ -295,6 +318,7 @@ if ($Erase) {
 
 # --- Bauen -------------------------------------------------------------------
 if (-not $SkipBuild) {
+    Ensure-CleanConfig   # nach sdkconfig.defaults-Aenderung sauber neu konfigurieren
     Invoke-Pio @('run', '-e', $envName) 'Firmware bauen'
 }
 
