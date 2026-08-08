@@ -29,6 +29,12 @@ int http_get(const char *url, char *buf, size_t buf_len)
         .timeout_ms = 8000,
         .crt_bundle_attach = esp_crt_bundle_attach,   // HTTPS-Zertifikatspruefung
         .user_agent = "esp-infoscreen",
+        // Groessere Puffer: lange URLs (z.B. Telegram sendMessage mit langem
+        // Text) sprengen sonst den TX-Default (512 B) -> Request scheitert; und
+        // manche Antwort-Header (Telegram) passen nicht in den RX-Default
+        // ("Buffer length is small to fit all the headers").
+        .buffer_size = 2048,
+        .buffer_size_tx = 2048,
     };
     esp_http_client_handle_t c = esp_http_client_init(&cfg);
     if (c) {

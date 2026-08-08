@@ -214,6 +214,11 @@ void network_manager_init(void)
     }
     ESP_ERROR_CHECK(esp_wifi_start());
 
+    // Modem-Sleep AUS: Power-Save (WIFI_PS_MIN_MODEM) laesst Scans im
+    // verbundenen Zustand oft leer ausgehen und macht die Verbindung traeger.
+    // Fuer ein dauerversorgtes Wanddisplay unnoetig -> volle Reaktionsfaehigkeit.
+    esp_wifi_set_ps(WIFI_PS_NONE);
+
     // RSSI 1x/s abtasten (fuer den 20-s-Mittelwert auf der WLAN-Slide)
     const esp_timer_create_args_t ta = { .callback = rssi_sample_cb, .name = "rssi" };
     esp_timer_handle_t th;
@@ -237,9 +242,11 @@ void network_manager_get_status(net_status_t *out)
 int network_manager_scan(net_ap_t *list, int max)
 {
     wifi_scan_config_t sc = { .show_hidden = false };
-    if (esp_wifi_scan_start(&sc, true) != ESP_OK) return 0;
+    esp_err_t err = esp_wifi_scan_start(&sc, true);
+    if (err != ESP_OK) { ESP_LOGW(TAG, "Scan-Start fehlgeschlagen: %s", esp_err_to_name(err)); return 0; }
     uint16_t num = 0;
     esp_wifi_scan_get_ap_num(&num);
+    ESP_LOGI(TAG, "Scan: %u Netze gefunden", (unsigned)num);
     if (num == 0) return 0;
     wifi_ap_record_t *recs = calloc(num, sizeof(wifi_ap_record_t));
     if (!recs) return 0;
