@@ -96,8 +96,12 @@ static esp_err_t settings_get(httpd_req_t *req)
     // Task (sequenziell) -> spart Stack (sonst Stack-Overflow der Seite).
     static net_ap_t aps[16];
     int n = network_manager_scan(aps, 16);
+    ESP_LOGI(TAG, "Einstellungsseite: %d Netze im Dropdown", n);
 
     httpd_resp_set_type(req, "text/html; charset=utf-8");
+    // Nicht cachen: sonst liefert der Browser beim "Netzwerke neu suchen" die
+    // alte Seite (leeres/veraltetes Dropdown) statt neu zu scannen.
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
 
     static const char *head =
         "<!doctype html><html lang=de><head><meta charset=utf-8>"

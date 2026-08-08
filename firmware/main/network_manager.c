@@ -241,13 +241,9 @@ void network_manager_get_status(net_status_t *out)
 
 int network_manager_scan(net_ap_t *list, int max)
 {
-    // Aktiver Scan mit etwas laengerer Verweildauer je Kanal -> findet auch
-    // schwaechere/langsamere APs (im verbundenen Zustand sonst schnell zu wenige).
-    wifi_scan_config_t sc = {
-        .show_hidden = false,
-        .scan_type = WIFI_SCAN_TYPE_ACTIVE,
-        .scan_time = { .active = { .min = 120, .max = 300 } },
-    };
+    // Kurzer Default-Scan (lange Verweildauer belastet WLAN/PSRAM -> RGB-DMA-
+    // Artefakte auf dem Display).
+    wifi_scan_config_t sc = { .show_hidden = false };
     esp_err_t err = esp_wifi_scan_start(&sc, true);
     if (err != ESP_OK) { ESP_LOGW(TAG, "Scan-Start fehlgeschlagen: %s", esp_err_to_name(err)); return 0; }
     uint16_t num = 0;
@@ -256,7 +252,8 @@ int network_manager_scan(net_ap_t *list, int max)
     if (num == 0) return 0;
     wifi_ap_record_t *recs = calloc(num, sizeof(wifi_ap_record_t));
     if (!recs) return 0;
-    esp_wifi_scan_get_ap_records(&num, recs);
+    esp_err_t rerr = esp_wifi_scan_get_ap_records(&num, recs);
+    if (rerr != ESP_OK) { ESP_LOGW(TAG, "get_ap_records: %s", esp_err_to_name(rerr)); free(recs); return 0; }
 
     int n = 0;
     for (int i = 0; i < num && n < max; i++) {
