@@ -84,6 +84,15 @@ Git-Stand und erzwingt nach Konfig-Änderungen automatisch einen sauberen Reconf
 - `docs/` — Admin-Guide, Lastenheft, recherchierte Datenquellen
 - `referenzen/` — Datenblätter, Herstellerzeichnungen, CAD-Assets
 
+## Bekannte Probleme
+
+- **Countdown bis zum nächsten Slide wird nicht angezeigt.** Der Zähler ist im
+  Code angelegt (`firmware/main/slideshow.c`, Label `s_countdown`, unten rechts,
+  Aktualisierung in `tick_cb`), erscheint aber auf dem Display bisher nicht.
+  Noch zu untersuchen (mögliche Ursachen: Sichtbarkeit/Farbe/Position, Z-Order
+  gegenüber dem Inhaltsbereich, oder Redraw des Eck-Labels). *(offen, eingeführt
+  mit `fb74134`)*
+
 ## Über dieses Projekt
 
 Entsteht in Zusammenarbeit mit [Claude](https://claude.com/claude-code) (Anthropic)
