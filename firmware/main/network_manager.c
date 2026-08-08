@@ -111,6 +111,13 @@ static void connect_sta(void)
     wifi_config_t sta = { 0 };
     strncpy((char *)sta.sta.ssid, ssid, sizeof(sta.sta.ssid));
     strncpy((char *)sta.sta.password, pass, sizeof(sta.sta.password));
+    // KEINE feste BSSID -> verbindet mit der SSID, nicht mit einer bestimmten AP.
+    // Alle Kanaele scannen und die STAERKSTE AP dieser SSID waehlen (statt der
+    // erst gefundenen per Fast-Scan) -> zuverlaessig bei mehreren APs/Mesh und
+    // nach Standortwechsel. Auth-Untergrenze WPA (akzeptiert WPA/WPA2/WPA3).
+    sta.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
+    sta.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
+    sta.sta.threshold.authmode = WIFI_AUTH_WPA_PSK;
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &sta));
 
