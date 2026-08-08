@@ -440,7 +440,10 @@ static void poll_task(void *arg)
         if (last >= 0) s_offset = last + 1;
 
         check_warning();
-        vTaskDelay(pdMS_TO_TICKS(4000));
+        // 10 s statt 4 s: deutlich seltenere TLS-Handshakes -> weniger PSRAM-
+        // Bandbreiten-Spitzen, die die RGB-DMA stoeren (Display-Artefakte).
+        // Bot-Kommandos werden dadurch max. ~10 s spaeter beantwortet.
+        vTaskDelay(pdMS_TO_TICKS(10000));
     }
 }
 

@@ -34,6 +34,10 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
 
 # --- RGB-LCD: Neustart des Panels im VSYNC (verhindert Bild-Drift) ---
 CONFIG_LCD_RGB_RESTART_IN_VSYNC=y
+# RGB-ISR IRAM-sicher: der Bounce-Buffer-Refill laeuft weiter, auch wenn WLAN
+# kurz den Flash-Cache abschaltet -> verhindert DMA-Underrun-Zeilen (Artefakte).
+# esp_lvgl_port unterstuetzt das (Callbacks sind LVGL_PORT_IRAM = IRAM_ATTR).
+CONFIG_LCD_RGB_ISR_IRAM_SAFE=y
 
 # --- HTTPS: Zertifikatsbundle (fuer esp_crt_bundle_attach) ---
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y

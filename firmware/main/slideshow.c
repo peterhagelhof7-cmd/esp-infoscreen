@@ -2,6 +2,7 @@
 #include "fonts_de.h"
 
 #include <stdio.h>
+#include "esp_timer.h"
 #include "esp_lvgl_port.h"
 
 #define MAX_SLIDES 12
@@ -13,11 +14,17 @@ static int s_current;
 static lv_obj_t *s_title;
 static lv_obj_t *s_content;
 static lv_obj_t *s_footer;
+static lv_obj_t *s_countdown;      // Sekunden bis zum naechsten Slide (untere Ecke)
+static uint32_t  s_interval_ms;    // Wechselintervall
+static int64_t   s_slide_start_us; // Startzeitpunkt des aktuellen Slides
+static int       s_last_rem = -1;  // zuletzt angezeigter Countdown (nur bei Aenderung neu zeichnen)
 
 static void show_slide(int idx)
 {
     if (s_count == 0) return;
     s_current = idx;
+    s_slide_start_us = esp_timer_get_time();
+    s_last_rem = -1;
     const slide_t *sl = s_slides[idx];
 
     lv_label_set_text(s_title, sl->title ? sl->title : "");
@@ -40,6 +47,18 @@ static void tick_cb(lv_timer_t *t)
     (void)t;
     if (s_count == 0) return;
     if (s_slides[s_current]->update) s_slides[s_current]->update();
+
+    // Countdown bis zum naechsten Slide (nur bei Sekundenwechsel neu zeichnen).
+    if (s_countdown && s_interval_ms > 0) {
+        int64_t elapsed_ms = (esp_timer_get_time() - s_slide_start_us) / 1000;
+        int rem = (int)(((int64_t)s_interval_ms - elapsed_ms + 999) / 1000);
+        if (rem < 0) rem = 0;
+        if (rem != s_last_rem) {
+            s_last_rem = rem;
+            char b[16]; snprintf(b, sizeof(b), "%d s", rem);
+            lv_label_set_text(s_countdown, b);
+        }
+    }
 }
 
 void slideshow_init(lv_display_t *disp)
@@ -70,6 +89,13 @@ void slideshow_init(lv_display_t *disp)
     lv_obj_set_style_text_color(s_footer, lv_color_hex(0x556080), 0);
     lv_obj_align(s_footer, LV_ALIGN_BOTTOM_MID, 0, -14);
 
+    // Countdown bis zum naechsten Slide (untere rechte Ecke)
+    s_countdown = lv_label_create(scr);
+    lv_obj_set_style_text_font(s_countdown, &montserrat_de_14, 0);
+    lv_obj_set_style_text_color(s_countdown, lv_color_hex(0x556080), 0);
+    lv_label_set_text(s_countdown, "");
+    lv_obj_align(s_countdown, LV_ALIGN_BOTTOM_RIGHT, -16, -16);
+
     lvgl_port_unlock();
 }
 
@@ -81,6 +107,7 @@ void slideshow_add(const slide_t *slide)
 void slideshow_start(uint32_t interval_ms)
 {
     lvgl_port_lock(0);
+    s_interval_ms = interval_ms;
     show_slide(0);
     lv_timer_create(switch_cb, interval_ms, NULL);
     lv_timer_create(tick_cb, 1000, NULL);
