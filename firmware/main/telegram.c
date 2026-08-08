@@ -425,6 +425,11 @@ static void poll_task(void *arg)
             s_primed = true;
         }
 
+        // Bot-Username evtl. beim ersten Versuch nicht geladen (Netz noch nicht
+        // bereit / getMe fehlgeschlagen) -> weiter versuchen, sonst reagiert der
+        // Bot NIE auf @-Erwaehnungen.
+        if (s_botname[0] == '\0') fetch_botname(token);
+
         // Boot-Meldung, sobald Werte da sind (~12 s nach Start)
         if (!s_greeted && esp_timer_get_time() > 12 * 1000000LL) {
             send_greeting();

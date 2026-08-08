@@ -23,7 +23,8 @@ static net_status_t s_status;
 static SemaphoreHandle_t s_lock;
 static int s_retry;
 static bool s_ap_started;
-static esp_timer_handle_t s_fb_timer;
+static esp_timer_handle_t s_fb_timer;          // STA -> Einrichtungs-AP
+static esp_timer_handle_t s_reconnect_timer;   // entzerrt die Verbindungsversuche
 
 // --- gleitender RSSI-Mittelwert (letzte ~20 s, 1x/s abgetastet) ---
 #define RSSI_WINDOW 20
@@ -101,6 +102,21 @@ static void start_fallback_timer(void)
     esp_timer_start_once(s_fb_timer, (uint64_t)STA_FALLBACK_MS * 1000);
 }
 
+// Verbindungsversuch nach kurzer Pause (statt sofort). Verhindert einen
+// Dauer-Scan-Loop (All-Channel-Scan belegt sonst die WLAN-Hardware dauerhaft ->
+// manueller Netz-Scan im Web liefert nichts, mehr CPU/PSRAM-Last am Display).
+static void reconnect_cb(void *arg)
+{
+    (void)arg;
+    esp_wifi_connect();
+}
+static void schedule_reconnect(uint32_t delay_ms)
+{
+    if (!s_reconnect_timer) { esp_wifi_connect(); return; }
+    esp_timer_stop(s_reconnect_timer);
+    esp_timer_start_once(s_reconnect_timer, (uint64_t)delay_ms * 1000);
+}
+
 static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
@@ -108,11 +124,12 @@ static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t id, voi
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
         if (s_status.mode == NET_MODE_INSTALLER_AP) return;   // im AP-Modus nicht dagegenarbeiten
         s_retry++;
-        ESP_LOGW(TAG, "STA getrennt (Versuch %d), erneut ...", s_retry);
-        esp_wifi_connect();   // weiter versuchen; der Zeit-Fallback greift nach STA_FALLBACK_MS
+        ESP_LOGW(TAG, "STA getrennt (Versuch %d), erneut in 4 s ...", s_retry);
+        schedule_reconnect(4000);   // entzerrt; Zeit-Fallback greift nach STA_FALLBACK_MS
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *ev = (ip_event_got_ip_t *)data;
-        if (s_fb_timer) esp_timer_stop(s_fb_timer);   // verbunden -> Fallback abbrechen
+        if (s_fb_timer) esp_timer_stop(s_fb_timer);            // verbunden -> Fallback abbrechen
+        if (s_reconnect_timer) esp_timer_stop(s_reconnect_timer);
         s_retry = 0;
         xSemaphoreTake(s_lock, portMAX_DELAY);
         s_status.mode = NET_MODE_STA_CONNECTED;
@@ -161,9 +178,11 @@ void network_manager_init(void)
     esp_netif_t *sta_netif = esp_netif_create_default_wifi_sta();
     esp_netif_create_default_wifi_ap();
 
-    // Einmaliger Fallback-Timer (STA -> Einrichtungs-AP), Callback siehe oben
+    // Timer: Fallback (STA -> Einrichtungs-AP) und entzerrter Reconnect
     const esp_timer_create_args_t fb = { .callback = fallback_cb, .name = "wifi_fallback" };
     esp_timer_create(&fb, &s_fb_timer);
+    const esp_timer_create_args_t rc = { .callback = reconnect_cb, .name = "wifi_reconnect" };
+    esp_timer_create(&rc, &s_reconnect_timer);
 
     // Hostname = Geraetename (Default esp-infoscreen)
     char host[32];
