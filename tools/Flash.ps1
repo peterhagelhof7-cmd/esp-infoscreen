@@ -244,27 +244,44 @@ function Invoke-Pio([string[]]$PioArgs, [string]$What) {
     }
 }
 
-# Erzwingt einen sauberen Reconfigure, wenn sich sdkconfig.defaults geaendert hat
-# (z.B. nach git pull). Sonst bleiben die generierte sdkconfig UND die Linker-
-# Skripte in .pio/build stale -> Linker-Fehler "undefined _ext_ram_bss_start" bzw.
-# "unplaced orphan section .bss..." (neue Kconfig-Optionen wirken nicht).
+# Erzwingt einen sauberen Reconfigure, wenn sich sdkconfig.defaults geaendert hat.
+# Grund: PlatformIO/espidf regeneriert bei einer Defaults-Aenderung NICHT
+# zuverlaessig die Linker-Skripte in .pio/build -> Linker-Fehler "undefined
+# _ext_ram_bss_start" bzw. "unplaced orphan section .bss..." (neue Kconfig-Optionen
+# wirken nicht). Erkennung ueber einen INHALTS-Hash (nicht mtime, der nach einem
+# Fehlbuild bereits "aktuell" sein kann) mit Stamp-Datei -> heilt auch den bereits
+# verklemmten Zustand beim naechsten Lauf selbst.
+$DefaultsStamp = Join-Path $firmwareDir '.pio\sdkconfig.defaults.stamp'
+
+function Get-DefaultsHash {
+    $defaults = Join-Path $firmwareDir 'sdkconfig.defaults'
+    if (-not (Test-Path $defaults)) { return '' }
+    return (Get-FileHash -Algorithm SHA256 -Path $defaults).Hash
+}
+
 function Ensure-CleanConfig {
-    $defaults  = Join-Path $firmwareDir 'sdkconfig.defaults'
+    $cur = Get-DefaultsHash
+    if ($cur -eq '') { return }
+    $prev = ''
+    if (Test-Path $DefaultsStamp) { $prev = (Get-Content $DefaultsStamp -Raw -ErrorAction SilentlyContinue).Trim() }
+    if ($cur -eq $prev) { return }   # Defaults unveraendert seit letztem Build
+
     $generated = Join-Path $firmwareDir "sdkconfig.$envName"
     $buildDir  = Join-Path $firmwareDir '.pio\build'
-    if (-not (Test-Path $defaults)) { return }
-
-    $needClean = $false
-    if (Test-Path $generated) {
-        if ((Get-Item $defaults).LastWriteTimeUtc -gt (Get-Item $generated).LastWriteTimeUtc) { $needClean = $true }
-    } elseif (Test-Path $buildDir) {
-        $needClean = $true   # Build vorhanden, aber generierte Config fehlt -> vorsichtshalber sauber
+    if ((Test-Path $generated) -or (Test-Path $buildDir)) {
+        Write-Host '>> sdkconfig.defaults geaendert - erzwinge sauberen Reconfigure (kann laenger dauern) ...' -ForegroundColor Cyan
+        Remove-Item -Force   $generated -ErrorAction SilentlyContinue
+        Remove-Item -Recurse -Force $buildDir -ErrorAction SilentlyContinue
     }
-    if (-not $needClean) { return }
+}
 
-    Write-Host '>> sdkconfig.defaults hat sich geaendert - erzwinge sauberen Reconfigure ...' -ForegroundColor Cyan
-    Remove-Item -Force   $generated -ErrorAction SilentlyContinue
-    Remove-Item -Recurse -Force $buildDir -ErrorAction SilentlyContinue
+# Nach erfolgreichem Build den aktuellen Defaults-Hash festhalten.
+function Save-DefaultsStamp {
+    $cur = Get-DefaultsHash
+    if ($cur -eq '') { return }
+    $dir = Split-Path $DefaultsStamp -Parent
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force $dir | Out-Null }
+    Set-Content -Path $DefaultsStamp -Value $cur -Encoding ascii
 }
 
 # Port-Argumente
@@ -320,6 +337,7 @@ if ($Erase) {
 if (-not $SkipBuild) {
     Ensure-CleanConfig   # nach sdkconfig.defaults-Aenderung sauber neu konfigurieren
     Invoke-Pio @('run', '-e', $envName) 'Firmware bauen'
+    Save-DefaultsStamp   # Defaults-Hash erst nach erfolgreichem Build festhalten
 }
 
 # --- Auf Board warten, dann flashen ------------------------------------------
