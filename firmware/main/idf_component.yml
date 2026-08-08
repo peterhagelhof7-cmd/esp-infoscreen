@@ -12,3 +12,6 @@ dependencies:
   # cJSON (in IDF 6 als Managed Component, Komponentenname espressif__cjson)
   espressif/cjson:
     version: "*"
+  # mDNS-Responder -> Geraet als "<name>.local" erreichbar
+  espressif/mdns:
+    version: "^1.2.0"

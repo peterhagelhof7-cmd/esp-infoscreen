@@ -37,4 +37,5 @@ idf_component_register(
         esp_partition
         esp-tls
         espressif__cjson
+        espressif__mdns
 )

@@ -1,9 +1,11 @@
 #include "muell.h"
 #include "http_util.h"
 #include "time_sync.h"
+#include "config_store.h"
 
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
@@ -13,8 +15,9 @@
 #include "esp_log.h"
 
 static const char *TAG = "muell";
-// Johannesberg-Oberafferbach (Landkreis Aschaffenburg, MyMuell/jumomind)
-#define MUELL_URL "https://mymuell.jumomind.com/mmapp/api.php?r=dates&city_id=44886&area_id=44886"
+// MyMuell/jumomind. Ortsteil-ID (city_id=area_id) per Config "muell_id",
+// Default Johannesberg-Oberafferbach = 44886 (Landkreis Aschaffenburg).
+#define MUELL_DEFAULT_ID "44886"
 #define MAX_ENTRIES 48                           // ~ein Jahr Abfuhrtermine vorhalten
 #define PARSE_BUF   32768
 #define POLL_INTERVAL_MS (6 * 60 * 60 * 1000)   // alle 6 Stunden
@@ -22,6 +25,7 @@ static const char *TAG = "muell";
 static EXT_RAM_BSS_ATTR muell_entry_t s_list[MAX_ENTRIES];   // PSRAM
 static int s_count;
 static SemaphoreHandle_t s_lock;
+static TaskHandle_t s_task;
 
 static void poll_once(void)
 {
@@ -32,7 +36,12 @@ static void poll_once(void)
     if (!buf) buf = malloc(PARSE_BUF);
     if (!buf) return;
 
-    int n = http_get(MUELL_URL, buf, PARSE_BUF);
+    char id[16]; config_get_str_def("muell_id", id, sizeof(id), MUELL_DEFAULT_ID);
+    char url[192];
+    snprintf(url, sizeof(url),
+             "https://mymuell.jumomind.com/mmapp/api.php?r=dates&city_id=%s&area_id=%s", id, id);
+
+    int n = http_get(url, buf, PARSE_BUF);
     if (n <= 0) { free(buf); ESP_LOGW(TAG, "Abruf fehlgeschlagen"); return; }
 
     cJSON *arr = cJSON_Parse(buf);
@@ -72,14 +81,21 @@ static void poll_task(void *arg)
     vTaskDelay(pdMS_TO_TICKS(4000));   // kurz warten (Netz/Uhr)
     for (;;) {
         poll_once();
-        vTaskDelay(pdMS_TO_TICKS(POLL_INTERVAL_MS));
+        // bis zum naechsten Turnus warten - oder frueher aufwachen, wenn
+        // muell_refresh() (z.B. nach Ortsteil-Aenderung im Web) benachrichtigt.
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(POLL_INTERVAL_MS));
     }
 }
 
 void muell_init(void)
 {
     s_lock = xSemaphoreCreateMutex();
-    xTaskCreate(poll_task, "muell", 8192, NULL, 3, NULL);
+    xTaskCreate(poll_task, "muell", 8192, NULL, 3, &s_task);
+}
+
+void muell_refresh(void)
+{
+    if (s_task) xTaskNotifyGive(s_task);
 }
 
 int muell_get(muell_entry_t *out, int max)

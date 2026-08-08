@@ -6,6 +6,7 @@
 #include "display.h"
 #include "slides.h"
 #include "telegram.h"
+#include "muell.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -234,6 +235,21 @@ static esp_err_t settings_get(httpd_req_t *req)
         "\"Statusinformationen &uuml;ber UPnP &uuml;bertragen\" aktiviert sein.</div></div>",
         fbesc);
     httpd_resp_sendstr_chunk(req, fb_card);
+
+    // --- Muell-Card (jumomind Ortsteil-ID) ---
+    char muellid[16]; config_get_str_def("muell_id", muellid, sizeof(muellid), "44886");
+    char muellid_esc[24]; html_escape(muellid, muellid_esc, sizeof(muellid_esc));
+    char muell_card[560];
+    snprintf(muell_card, sizeof(muell_card),
+        "<div class=card style='margin-top:16px'>"
+        "<h1>M\xc3\xbcll</h1><div class=sub>Ortsteil-ID (jumomind / MyM\xc3\xbcll)</div>"
+        "<form method=post action=/muell>"
+        "<input type=text name=id value=\"%s\" placeholder='z.B. 44886'>"
+        "<button type=submit>Speichern</button></form>"
+        "<div class=st>Standard 44886 = Johannesberg-Oberafferbach. Andere: Johannesberg 29018, "
+        "Breunsberg 7639, R\xc3\xbc" "ckersbach 53323, Steinbach 59146, Sternberg 59533.</div></div>",
+        muellid_esc);
+    httpd_resp_sendstr_chunk(req, muell_card);
 
     // --- OpenWeatherMap-Card (API-Key + Standort) ---
     char owmkey[48] = { 0 };
@@ -519,6 +535,22 @@ static esp_err_t factory_post(httpd_req_t *req)
     return ESP_OK;
 }
 
+static esp_err_t muell_post(httpd_req_t *req)
+{
+    char body[64];
+    int total = req->content_len < (int)sizeof(body) - 1 ? req->content_len : (int)sizeof(body) - 1;
+    int recvd = total > 0 ? httpd_req_recv(req, body, total) : 0;
+    if (recvd < 0) return ESP_FAIL;
+    body[recvd > 0 ? recvd : 0] = '\0';
+
+    char id[16] = { 0 };
+    form_field(body, "id", id, sizeof(id));
+    config_set_str("muell_id", id[0] ? id : "44886");
+    muell_refresh();   // sofort mit neuer ID neu abrufen (kein Neustart noetig)
+    ESP_LOGI(TAG, "Muell-Ortsteil-ID gesetzt: %s", id[0] ? id : "44886");
+    return redirect_settings(req);
+}
+
 static esp_err_t fritzbox_post(httpd_req_t *req)
 {
     char body[256];
@@ -729,6 +761,7 @@ void web_server_start(void)
     httpd_uri_t ota  = { .uri = "/ota", .method = HTTP_POST, .handler = ota_post };
     httpd_uri_t disp = { .uri = "/display", .method = HTTP_POST, .handler = display_post };
     httpd_uri_t fb   = { .uri = "/fritzbox", .method = HTTP_POST, .handler = fritzbox_post };
+    httpd_uri_t mue  = { .uri = "/muell", .method = HTTP_POST, .handler = muell_post };
     httpd_uri_t tadd = { .uri = "/tadd", .method = HTTP_POST, .handler = tadd_post };
     httpd_uri_t tdel = { .uri = "/tdel", .method = HTTP_POST, .handler = tdel_post };
     httpd_uri_t owm  = { .uri = "/owm", .method = HTTP_POST, .handler = owm_post };
@@ -748,6 +781,7 @@ void web_server_start(void)
     httpd_register_uri_handler(server, &ota);
     httpd_register_uri_handler(server, &disp);
     httpd_register_uri_handler(server, &fb);
+    httpd_register_uri_handler(server, &mue);
     httpd_register_uri_handler(server, &tadd);
     httpd_register_uri_handler(server, &tdel);
     httpd_register_uri_handler(server, &owm);

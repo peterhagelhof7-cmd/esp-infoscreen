@@ -11,6 +11,7 @@
 #include "esp_mac.h"
 #include "esp_timer.h"
 #include "esp_log.h"
+#include "mdns.h"
 
 static const char *TAG = "network";
 #define MAX_STA_RETRY 8
@@ -134,6 +135,16 @@ void network_manager_init(void)
     char host[32];
     config_get_str_def("dev_name", host, sizeof(host), "esp-infoscreen");
     if (sta_netif) esp_netif_set_hostname(sta_netif, host);
+
+    // mDNS: Geraet als "<host>.local" im Browser erreichbar (kein IP-Suchen)
+    if (mdns_init() == ESP_OK) {
+        mdns_hostname_set(host);
+        mdns_instance_name_set(host);
+        mdns_service_add(NULL, "_http", "_tcp", 80, NULL, 0);
+        ESP_LOGI(TAG, "mDNS aktiv: http://%s.local", host);
+    } else {
+        ESP_LOGW(TAG, "mDNS-Init fehlgeschlagen");
+    }
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
