@@ -17,6 +17,9 @@ idf_component_register(
         "spessart.c"
         "owm.c"
         "telegram.c"
+        "fonts/montserrat_de_14.c"
+        "fonts/montserrat_de_28.c"
+        "fonts/montserrat_de_48.c"
     INCLUDE_DIRS
         "."
     REQUIRES

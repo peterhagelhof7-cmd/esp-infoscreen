@@ -148,7 +148,7 @@ static esp_err_t settings_get(httpd_req_t *req)
     char dvesc[64]; html_escape(devname, dvesc, sizeof(dvesc));
     char dev_card[360];
     snprintf(dev_card, sizeof(dev_card),
-        "<div class=card style='margin-top:16px'><h1>Geraet</h1><div class=sub>Name (Neustart)</div>"
+        "<div class=card style='margin-top:16px'><h1>Ger\xc3\xa4t</h1><div class=sub>Name (Neustart)</div>"
         "<form method=post action=/device><input type=text name=name maxlength=31 value=\"%s\">"
         "<button type=submit>Speichern</button></form></div>", dvesc);
     httpd_resp_sendstr_chunk(req, dev_card);
@@ -163,11 +163,11 @@ static esp_err_t settings_get(httpd_req_t *req)
         "<form method=post action=/brightness>"
         "<label>Helligkeit: %d%%</label>"
         "<input type=range name=b min=5 max=100 value=%d oninput=\"this.previousElementSibling.textContent='Helligkeit: '+this.value+'%%'\">"
-        "<button type=submit>Uebernehmen</button></form>"
+        "<button type=submit>\xc3\x9c" "bernehmen</button></form>"
         "<form method=post action=/display style='margin-top:8px'>"
         "<label style='display:flex;align-items:center;gap:10px'>"
         "<input type=checkbox name=rot value=1 %s style='width:auto'> Um 180&deg; drehen (Neustart)</label>"
-        "<button type=submit>Uebernehmen</button></form>",
+        "<button type=submit>\xc3\x9c" "bernehmen</button></form>",
         bright, bright, rotated ? "checked" : "");
     httpd_resp_sendstr_chunk(req, an1);
 
@@ -193,7 +193,7 @@ static esp_err_t settings_get(httpd_req_t *req)
     // --- Termine-Card (anlegen / loeschen) ---
     httpd_resp_sendstr_chunk(req,
         "<div class=card style='margin-top:16px'><h1>Termine</h1>"
-        "<div class=sub>naechste Termine (erscheinen im Kalender)</div>");
+        "<div class=sub>n\xc3\xa4" "chste Termine (erscheinen im Kalender)</div>");
     {
         static termine_entry_t te[50];   // static: siehe aps-Hinweis oben (Stack)
         int tn = termine_get_all(te, 50);
@@ -216,7 +216,7 @@ static esp_err_t settings_get(httpd_req_t *req)
         "<label>Datum</label><input type=date name=date required>"
         "<label>Uhrzeit (optional)</label><input type=time name=time>"
         "<label>Titel</label><input type=text name=title maxlength=39 required>"
-        "<button type=submit>Termin hinzufuegen</button></form></div>");
+        "<button type=submit>Termin hinzuf\xc3\xbcgen</button></form></div>");
 
     // --- Fritzbox-Card (Adresse, leer = Gateway) ---
     char fbhost[64] = { 0 };
@@ -252,7 +252,7 @@ static esp_err_t settings_get(httpd_req_t *req)
         "<input type=text name=loc value=\"%s\" placeholder='z.B. Aschaffenburg,DE'>"
         "<button type=submit>Speichern</button></form>"
         "<div class=st>Kostenloser Key von openweathermap.org. %s</div></div>",
-        has_key ? "gesetzt - zum Aendern neuen Key eingeben" : "noch nicht gesetzt",
+        has_key ? "gesetzt - zum \xc3\x84ndern neuen Key eingeben" : "noch nicht gesetzt",
         owmloc_esc,
         has_key ? "Key aktuell konfiguriert." : "");
     httpd_resp_sendstr_chunk(req, owm_card);
@@ -275,7 +275,7 @@ static esp_err_t settings_get(httpd_req_t *req)
         "<button type=submit>Speichern</button></form>"
         "<div class=st>Token vom @BotFather. Chat-ID der Gruppe (negativ). "
         "Der Bot muss Mitglied der Gruppe sein. %s</div></div>",
-        has_tok ? "gesetzt - zum Aendern neuen Token eingeben" : "noch nicht gesetzt",
+        has_tok ? "gesetzt - zum \xc3\x84ndern neuen Token eingeben" : "noch nicht gesetzt",
         tgchat_esc,
         has_tok ? "Token aktuell konfiguriert." : "");
     httpd_resp_sendstr_chunk(req, tg_card);
@@ -289,10 +289,10 @@ static esp_err_t settings_get(httpd_req_t *req)
         "<div class=st id=ost></div></div>"
         "<script>"
         "function up(){var f=document.getElementById('fw').files[0];"
-        "if(!f){alert('Bitte eine .bin-Datei waehlen');return;}"
+        "if(!f){alert('Bitte eine .bin-Datei w\xc3\xa4hlen');return;}"
         "var s=document.getElementById('ost');var x=new XMLHttpRequest();x.open('POST','/ota');"
         "x.upload.onprogress=function(e){if(e.lengthComputable)s.textContent='Hochladen... '+Math.round(e.loaded/e.total*100)+'%';};"
-        "x.onload=function(){s.textContent=(x.status==200)?'OK - Geraet startet neu.':'Fehler: '+x.responseText;};"
+        "x.onload=function(){s.textContent=(x.status==200)?'OK - Ger\xc3\xa4t startet neu.':'Fehler: '+x.responseText;};"
         "x.onerror=function(){s.textContent='Upload-Fehler';};x.send(f);}"
         "</script>");
 
@@ -308,14 +308,14 @@ static esp_err_t settings_get(httpd_req_t *req)
         "<form method=post action=/reboot style='margin-top:16px'>"
         "<button type=submit style='background:#5a6478'>Neustart</button></form>"
         "<form method=post action=/factory style='margin-top:16px'>"
-        "<label>Werksreset - zur Bestaetigung Geraetenamen eingeben</label>"
-        "<input type=text name=confirm placeholder='Geraetename' autocomplete=off>"
+        "<label>Werksreset - zur Best\xc3\xa4tigung Ger\xc3\xa4tenamen eingeben</label>"
+        "<input type=text name=confirm placeholder='Ger\xc3\xa4tename' autocomplete=off>"
         "<button type=submit style='background:#a33a3a'>Werksreset &amp; Neustart</button></form></div>"
         "<script>"
         "function cu(){var f=document.getElementById('cf').files[0];"
-        "if(!f){alert('Bitte eine .json-Datei waehlen');return;}"
+        "if(!f){alert('Bitte eine .json-Datei w\xc3\xa4hlen');return;}"
         "var s=document.getElementById('cst');var x=new XMLHttpRequest();x.open('POST','/config/upload');"
-        "x.onload=function(){s.textContent=(x.status==200)?'OK - Geraet startet neu.':'Fehler: '+x.responseText;};"
+        "x.onload=function(){s.textContent=(x.status==200)?'OK - Ger\xc3\xa4t startet neu.':'Fehler: '+x.responseText;};"
         "x.onerror=function(){s.textContent='Upload-Fehler';};x.send(f);}"
         "</script>");
 
@@ -341,7 +341,7 @@ static esp_err_t display_post(httpd_req_t *req)
     httpd_resp_set_type(req, "text/html; charset=utf-8");
     httpd_resp_sendstr(req,
         "<!doctype html><meta charset=utf-8><body style='font-family:sans-serif;background:#101830;color:#eee;padding:24px'>"
-        "<h2>Gespeichert.</h2><p>Das Geraet startet neu und uebernimmt die Ausrichtung.</p></body>");
+        "<h2>Gespeichert.</h2><p>Das Ger\xc3\xa4t startet neu und \xc3\xbc" "bernimmt die Ausrichtung.</p></body>");
     vTaskDelay(pdMS_TO_TICKS(800));
     esp_restart();
     return ESP_OK;
@@ -480,7 +480,7 @@ static esp_err_t configul_post(httpd_req_t *req)
     if (recvd <= 0) return ESP_FAIL;
     buf[recvd] = '\0';
     bool ok = config_import_json(buf);
-    if (!ok) { httpd_resp_set_status(req, "400 Bad Request"); httpd_resp_sendstr(req, "Ungueltiges JSON"); return ESP_OK; }
+    if (!ok) { httpd_resp_set_status(req, "400 Bad Request"); httpd_resp_sendstr(req, "Ung\xc3\xbcltiges JSON"); return ESP_OK; }
     httpd_resp_sendstr(req, "OK");
     ESP_LOGI(TAG, "Einstellungen importiert - Neustart");
     vTaskDelay(pdMS_TO_TICKS(800));
@@ -509,7 +509,7 @@ static esp_err_t factory_post(httpd_req_t *req)
     config_get_str_def("dev_name", name, sizeof(name), "esp-infoscreen");
     if (strcmp(confirm, name) != 0) {
         httpd_resp_set_status(req, "400 Bad Request");
-        httpd_resp_sendstr(req, "Geraetename stimmt nicht - Werksreset abgebrochen.");
+        httpd_resp_sendstr(req, "Ger\xc3\xa4tename stimmt nicht - Werksreset abgebrochen.");
         return ESP_OK;
     }
     config_clear();
@@ -566,7 +566,7 @@ static esp_err_t ota_post(httpd_req_t *req)
     }
     if (!ota_manager_finish()) {
         httpd_resp_set_status(req, "500 Internal Server Error");
-        httpd_resp_sendstr(req, "Image ungueltig");
+        httpd_resp_sendstr(req, "Image ung\xc3\xbcltig");
         return ESP_OK;
     }
     httpd_resp_sendstr(req, "OK");
@@ -597,7 +597,7 @@ static esp_err_t save_post(httpd_req_t *req)
     httpd_resp_set_type(req, "text/html; charset=utf-8");
     httpd_resp_sendstr(req,
         "<!doctype html><meta charset=utf-8><body style='font-family:sans-serif;background:#101830;color:#eee;padding:24px'>"
-        "<h2>Gespeichert.</h2><p>Das Geraet startet neu und verbindet sich mit dem WLAN.</p></body>");
+        "<h2>Gespeichert.</h2><p>Das Ger\xc3\xa4t startet neu und verbindet sich mit dem WLAN.</p></body>");
 
     ESP_LOGI(TAG, "WLAN-Konfiguration empfangen (SSID \"%s\")", ssid);
     network_manager_apply_wifi(ssid, pass);   // speichert + Neustart

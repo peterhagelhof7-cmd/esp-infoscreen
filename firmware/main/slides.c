@@ -10,6 +10,7 @@
 #include "owm.h"
 #include "telegram.h"
 #include "config_store.h"
+#include "fonts_de.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -18,30 +19,27 @@
 #include "esp_attr.h"
 #include "lvgl.h"
 
-// Umlaute/ss fuer die eingebauten LVGL-Schriften transliterieren (ue/oe/ae/ss),
-// da Montserrat keine Latin-1-Sonderzeichen enthaelt.
+// Die eigenen Fonts (fonts_de.h) enthalten echte Umlaut-Glyphen -> keine
+// Transliteration mehr noetig. de_ascii() kopiert nur noch UTF-8-sicher nach out
+// (schneidet am Puffer-Ende keine mehrbyte-Sequenz mittendrin ab).
 static void de_ascii(const char *in, char *out, size_t out_len)
 {
-    size_t o = 0;
-    for (size_t i = 0; in[i] && o + 3 < out_len; ) {
-        if ((unsigned char)in[i] == 0xC3 && in[i + 1]) {
-            const char *rep = NULL;
-            switch ((unsigned char)in[i + 1]) {
-                case 0xA4: rep = "ae"; break; case 0xB6: rep = "oe"; break; case 0xBC: rep = "ue"; break;
-                case 0x84: rep = "Ae"; break; case 0x96: rep = "Oe"; break; case 0x9C: rep = "Ue"; break;
-                case 0x9F: rep = "ss"; break;
-            }
-            if (rep) { out[o++] = rep[0]; out[o++] = rep[1]; i += 2; continue; }
-        }
-        out[o++] = in[i++];
+    if (out_len == 0) return;
+    size_t o = 0, last_start = 0;
+    for (size_t i = 0; in[i] && o + 1 < out_len; i++) {
+        if (((unsigned char)in[i] & 0xC0) != 0x80) last_start = o;   // Anfang eines Zeichens
+        out[o++] = in[i];
     }
+    // Wurde mitten in einem Zeichen abgeschnitten (naechstes Quellbyte ist ein
+    // Folgebyte), das angefangene letzte Zeichen verwerfen.
+    if (((unsigned char)in[o] & 0xC0) == 0x80) o = last_start;
     out[o] = '\0';
 }
 
 // Groesste eingebaute LVGL-Schrift = Montserrat 48. Fuer die "Helden"-Werte.
-#define FONT_BIG   (&lv_font_montserrat_48)
-#define FONT_MED   (&lv_font_montserrat_28)
-#define FONT_SM    (&lv_font_montserrat_14)
+#define FONT_BIG   (&montserrat_de_48)
+#define FONT_MED   (&montserrat_de_28)
+#define FONT_SM    (&montserrat_de_14)
 
 // ============================ Slide 1: Uhr / Datum ===========================
 // Ohne Sekunden: nur bei Minutenwechsel neu zeichnen -> kaum Neuzeichnungen
@@ -108,7 +106,7 @@ static void owm_build(lv_obj_t *p)
         lv_obj_t *l = lv_label_create(p);
         lv_obj_set_style_text_font(l, FONT_MED, 0);
         lv_obj_set_style_text_color(l, lv_color_hex(0xb0b8d0), 0);
-        lv_label_set_text(l, !d.has_key ? "Kein API-Key (Einstellungen)" : "Wetter nicht verfuegbar");
+        lv_label_set_text(l, !d.has_key ? "Kein API-Key (Einstellungen)" : "Wetter nicht verf\xc3\xbcgbar");
         lv_obj_center(l);
         return;
     }
@@ -130,7 +128,7 @@ static void owm_build(lv_obj_t *p)
     lv_obj_align(ld, LV_ALIGN_TOP_MID, 0, 66);
 
     char more[80];
-    snprintf(more, sizeof(more), "gefuehlt %d \xc2\xb0""C  -  %d%% rF  -  Wind %d km/h", d.feels, d.humidity, d.wind_kmh);
+    snprintf(more, sizeof(more), "gef\xc3\xbchlt %d \xc2\xb0""C  -  %d%% rF  -  Wind %d km/h", d.feels, d.humidity, d.wind_kmh);
     lv_obj_t *lm = lv_label_create(p);
     lv_obj_set_style_text_font(lm, FONT_MED, 0);
     lv_obj_set_style_text_color(lm, lv_color_hex(0xb0b8d0), 0);
@@ -167,9 +165,9 @@ static void owm_build(lv_obj_t *p)
         lv_obj_align(lte, LV_ALIGN_CENTER, 0, 4);
 
         char cd[40]; de_ascii(d.fc[k].desc, cd, sizeof(cd));
-        if (cd[0]) cd[0] = (char)toupper((unsigned char)cd[0]);
+        if (cd[0] >= 'a' && cd[0] <= 'z') cd[0] = (char)(cd[0] - 'a' + 'A');   // nur ASCII gross
         lv_obj_t *lcd = lv_label_create(cell);
-        lv_obj_set_style_text_font(lcd, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_font(lcd, FONT_SM, 0);
         lv_obj_set_style_text_color(lcd, lv_color_hex(0xb0b8d0), 0);
         lv_obj_set_width(lcd, 228);
         lv_obj_set_style_text_align(lcd, LV_TEXT_ALIGN_CENTER, 0);
@@ -201,7 +199,7 @@ static void network_update(void)
         lv_label_set_text(nw_l1, l1);
         lv_label_set_text(nw_l2, l2);
     } else if (st.mode == NET_MODE_INSTALLER_AP) {
-        lv_label_set_text(nw_mode, "Einrichtung noetig");
+        lv_label_set_text(nw_mode, "Einrichtung n\xc3\xb6tig");
         lv_obj_set_style_text_color(nw_mode, lv_color_hex(0xf5c542), 0);
         lv_label_set_text(nw_l1, "WLAN \"" NET_AP_SSID "\"  (PW: " NET_AP_PASS ")");
         lv_label_set_text(nw_l2, "Browser: http://" NET_AP_IP);

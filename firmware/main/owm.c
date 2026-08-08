@@ -150,7 +150,7 @@ static void poll_forecast(void)
         char wd[14];
         date_offset(k + 1, dates[k], sizeof(dates[k]), wd, sizeof(wd));
         if (k == 0)      snprintf(fc[k].label, sizeof(fc[k].label), "Morgen");
-        else if (k == 1) snprintf(fc[k].label, sizeof(fc[k].label), "Uebermorgen");
+        else if (k == 1) snprintf(fc[k].label, sizeof(fc[k].label), "\xc3\x9c" "bermorgen");
         else             snprintf(fc[k].label, sizeof(fc[k].label), "%s", wd);
         fc[k].tmin = 999; fc[k].tmax = -999;
     }

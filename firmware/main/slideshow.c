@@ -1,4 +1,5 @@
 #include "slideshow.h"
+#include "fonts_de.h"
 
 #include <stdio.h>
 #include "esp_lvgl_port.h"
@@ -51,7 +52,7 @@ void slideshow_init(lv_display_t *disp)
 
     // Titelzeile oben
     s_title = lv_label_create(scr);
-    lv_obj_set_style_text_font(s_title, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_font(s_title, &montserrat_de_28, 0);
     lv_obj_set_style_text_color(s_title, lv_color_hex(0x8ab4f8), 0);
     lv_obj_align(s_title, LV_ALIGN_TOP_MID, 0, 18);
 
