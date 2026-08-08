@@ -7,12 +7,14 @@ typedef struct {
     int  tmin;        // erwartetes Minimum (Grad C)
     int  tmax;        // erwartetes Maximum (Grad C)
     char desc[32];    // Wetterbeschreibung (deutsch, Mittag)
+    char icon[4];     // OWM-Icon-Code (z.B. "10d") fuer das Symbol
 } owm_fc_day_t;
 
 typedef struct {
     bool valid;        // aktuelle Werte gueltig
     bool has_key;      // API-Key konfiguriert?
     char desc[48];     // aktuelle Wetterbeschreibung
+    char icon[4];      // OWM-Icon-Code (z.B. "01d")
     int  temp;         // Grad C
     int  feels;        // gefuehlt, Grad C
     int  humidity;     // %

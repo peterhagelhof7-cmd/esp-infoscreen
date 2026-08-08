@@ -81,7 +81,7 @@ static void poll_current(void)
     char url[320]; snprintf(url, sizeof(url), CUR_URL, loc, key);
     static char buf[4096];
     bool valid = false;
-    char desc[48] = { 0 };
+    char desc[48] = { 0 }, icon[4] = { 0 };
     int temp = 0, feels = 0, hum = 0, wind = 0;
 
     int n = http_get(url, buf, sizeof(buf));
@@ -101,8 +101,11 @@ static void poll_current(void)
                 valid = true;
             }
             if (cJSON_IsArray(weather) && cJSON_GetArraySize(weather) > 0) {
-                cJSON *d = cJSON_GetObjectItem(cJSON_GetArrayItem(weather, 0), "description");
+                cJSON *w0 = cJSON_GetArrayItem(weather, 0);
+                cJSON *d = cJSON_GetObjectItem(w0, "description");
+                cJSON *ic = cJSON_GetObjectItem(w0, "icon");
                 if (cJSON_IsString(d)) strncpy(desc, d->valuestring, sizeof(desc) - 1);
+                if (cJSON_IsString(ic)) strncpy(icon, ic->valuestring, sizeof(icon) - 1);
             }
             if (cJSON_IsObject(w)) {
                 cJSON *sp = cJSON_GetObjectItem(w, "speed");
@@ -118,6 +121,7 @@ static void poll_current(void)
     s_data.valid = valid;
     if (valid) {
         strncpy(s_data.desc, desc, sizeof(s_data.desc) - 1);
+        strncpy(s_data.icon, icon, sizeof(s_data.icon) - 1);
         s_data.temp = temp; s_data.feels = feels; s_data.humidity = hum; s_data.wind_kmh = wind;
     }
     xSemaphoreGive(s_lock);
@@ -174,8 +178,11 @@ static void poll_forecast(void)
                 best_hd[k] = hd;
                 cJSON *weather = cJSON_GetObjectItem(e, "weather");
                 if (cJSON_IsArray(weather) && cJSON_GetArraySize(weather) > 0) {
-                    cJSON *d = cJSON_GetObjectItem(cJSON_GetArrayItem(weather, 0), "description");
+                    cJSON *w0 = cJSON_GetArrayItem(weather, 0);
+                    cJSON *d = cJSON_GetObjectItem(w0, "description");
+                    cJSON *ic = cJSON_GetObjectItem(w0, "icon");
                     if (cJSON_IsString(d)) strncpy(fc[k].desc, d->valuestring, sizeof(fc[k].desc) - 1);
+                    if (cJSON_IsString(ic)) strncpy(fc[k].icon, ic->valuestring, sizeof(fc[k].icon) - 1);
                 }
             }
             fc[k].valid = true;

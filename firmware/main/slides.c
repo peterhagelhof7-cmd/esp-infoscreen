@@ -96,6 +96,104 @@ static void clock_build(lv_obj_t *p)
 static const slide_t SLIDE_CLOCK = { "clock", "Uhrzeit & Datum", clock_build, clock_update };
 
 // ===================== Slide: Wetter (OpenWeatherMap) ========================
+// ---- Wetter-Icons: aus LVGL-Primitiven (Scheiben/Balken) gezeichnet ----------
+// Keine externen Assets, keine lv_line-Pointer (Lebensdauer-Problem). Groessen/
+// Positionen als Promille der Box (box=Kantenlaenge).
+#define WI_SUN  0xffd23f
+#define WI_MOON 0xd6def0
+#define WI_CLL  0xe6ecf7
+#define WI_CLG  0x9aa4c0
+#define WI_RAIN 0x5b9bd5
+
+static lv_obj_t *wi_disc(lv_obj_t *p, int d, uint32_t col, int dx, int dy)
+{
+    lv_obj_t *o = lv_obj_create(p);
+    lv_obj_remove_style_all(o);
+    lv_obj_set_size(o, d, d);
+    lv_obj_set_style_radius(o, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(o, lv_color_hex(col), 0);
+    lv_obj_set_style_bg_opa(o, LV_OPA_COVER, 0);
+    lv_obj_clear_flag(o, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align(o, LV_ALIGN_CENTER, dx, dy);
+    return o;
+}
+static lv_obj_t *wi_bar(lv_obj_t *p, int w, int h, int r, uint32_t col, int dx, int dy)
+{
+    lv_obj_t *o = lv_obj_create(p);
+    lv_obj_remove_style_all(o);
+    lv_obj_set_size(o, w, h);
+    lv_obj_set_style_radius(o, r, 0);
+    lv_obj_set_style_bg_color(o, lv_color_hex(col), 0);
+    lv_obj_set_style_bg_opa(o, LV_OPA_COVER, 0);
+    lv_obj_clear_flag(o, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align(o, LV_ALIGN_CENTER, dx, dy);
+    return o;
+}
+static void wi_cloud(lv_obj_t *p, int s, uint32_t col, int dx, int dy)
+{
+    wi_bar(p, s * 66 / 100, s * 26 / 100, s * 13 / 100, col, dx, dy + s * 10 / 100);
+    wi_disc(p, s * 34 / 100, col, dx - s * 18 / 100, dy + s * 2 / 100);
+    wi_disc(p, s * 44 / 100, col, dx + s * 2 / 100,  dy - s * 6 / 100);
+    wi_disc(p, s * 30 / 100, col, dx + s * 22 / 100, dy + s * 4 / 100);
+}
+
+// Zeichnet das zum OWM-Icon-Code (z.B. "10d") passende Symbol in einen neuen
+// box*box-Container in p. Container wird zurueckgegeben (Aufrufer richtet aus).
+static lv_obj_t *weather_icon(lv_obj_t *p, const char *code, int box)
+{
+    lv_obj_t *c = lv_obj_create(p);
+    lv_obj_remove_style_all(c);
+    lv_obj_set_size(c, box, box);
+    lv_obj_clear_flag(c, LV_OBJ_FLAG_SCROLLABLE);
+
+    int s = box;
+    int pfx = (code && code[0] && code[1]) ? (code[0] - '0') * 10 + (code[1] - '0') : 3;
+    bool night = code && code[0] && code[2] == 'n';
+    uint32_t disc = night ? WI_MOON : WI_SUN;
+
+    switch (pfx) {
+    case 1:   // klarer Himmel: Sonne/Mond (Sonne mit Strahlen)
+        wi_disc(c, s * 52 / 100, disc, 0, 0);
+        if (!night) {
+            wi_bar(c, s * 8 / 100,  s * 20 / 100, s * 4 / 100, disc, 0, -s * 38 / 100);
+            wi_bar(c, s * 8 / 100,  s * 20 / 100, s * 4 / 100, disc, 0,  s * 38 / 100);
+            wi_bar(c, s * 20 / 100, s * 8 / 100,  s * 4 / 100, disc, -s * 38 / 100, 0);
+            wi_bar(c, s * 20 / 100, s * 8 / 100,  s * 4 / 100, disc,  s * 38 / 100, 0);
+        }
+        break;
+    case 2:   // wenige Wolken: Sonne/Mond + Wolke
+        wi_disc(c, s * 36 / 100, disc, -s * 18 / 100, -s * 20 / 100);
+        wi_cloud(c, s * 88 / 100, WI_CLL, s * 6 / 100, s * 12 / 100);
+        break;
+    case 3:   wi_cloud(c, s, WI_CLL, 0, -s * 4 / 100); break;
+    case 4:   wi_cloud(c, s, WI_CLG, 0, -s * 4 / 100); break;
+    case 9:
+    case 10:  // Regen
+        wi_cloud(c, s * 92 / 100, WI_CLL, 0, -s * 16 / 100);
+        wi_bar(c, s * 7 / 100, s * 20 / 100, s * 3 / 100, WI_RAIN, -s * 18 / 100, s * 30 / 100);
+        wi_bar(c, s * 7 / 100, s * 20 / 100, s * 3 / 100, WI_RAIN, 0,             s * 34 / 100);
+        wi_bar(c, s * 7 / 100, s * 20 / 100, s * 3 / 100, WI_RAIN, s * 18 / 100,  s * 30 / 100);
+        break;
+    case 11:  // Gewitter: graue Wolke + gelber Blitz
+        wi_cloud(c, s * 92 / 100, WI_CLG, 0, -s * 16 / 100);
+        wi_bar(c, s * 9 / 100, s * 30 / 100, s * 2 / 100, WI_SUN, 0, s * 30 / 100);
+        break;
+    case 13:  // Schnee
+        wi_cloud(c, s * 92 / 100, WI_CLL, 0, -s * 16 / 100);
+        wi_disc(c, s * 10 / 100, 0xffffff, -s * 18 / 100, s * 30 / 100);
+        wi_disc(c, s * 10 / 100, 0xffffff, 0,             s * 34 / 100);
+        wi_disc(c, s * 10 / 100, 0xffffff, s * 18 / 100,  s * 30 / 100);
+        break;
+    case 50:  // Nebel
+        wi_cloud(c, s * 80 / 100, WI_CLG, 0, -s * 22 / 100);
+        wi_bar(c, s * 64 / 100, s * 7 / 100, s * 3 / 100, WI_CLG, 0, s * 20 / 100);
+        wi_bar(c, s * 54 / 100, s * 7 / 100, s * 3 / 100, WI_CLG, 0, s * 36 / 100);
+        break;
+    default:  wi_cloud(c, s, WI_CLL, 0, -s * 4 / 100); break;
+    }
+    return c;
+}
+
 // Obere Haelfte: aktuelle Werte. Untere Haelfte: 3 gleich grosse Zellen
 // (Morgen / Uebermorgen / Wochentag danach) mit Min/Max + Kurz-Wetter.
 static void owm_build(lv_obj_t *p)
@@ -135,6 +233,11 @@ static void owm_build(lv_obj_t *p)
     lv_label_set_text(lm, more);
     lv_obj_align(lm, LV_ALIGN_TOP_MID, 0, 112);
 
+    if (d.icon[0]) {
+        lv_obj_t *ic = weather_icon(p, d.icon, 104);
+        lv_obj_align(ic, LV_ALIGN_TOP_LEFT, 44, 18);
+    }
+
     // --- untere Haelfte: 3 Vorhersage-Zellen ---
     if (!d.fc_valid) return;
     const int cx[3] = { -258, 0, 258 };   // Zellenmittelpunkte relativ zur Mitte
@@ -157,12 +260,17 @@ static void owm_build(lv_obj_t *p)
         lv_label_set_text(hdr, d.fc[k].label);
         lv_obj_align(hdr, LV_ALIGN_TOP_MID, 0, 0);
 
+        if (d.fc[k].icon[0]) {
+            lv_obj_t *ic = weather_icon(cell, d.fc[k].icon, 50);
+            lv_obj_align(ic, LV_ALIGN_CENTER, 0, -22);
+        }
+
         char tt[24]; snprintf(tt, sizeof(tt), "%d\xc2\xb0 / %d\xc2\xb0", d.fc[k].tmin, d.fc[k].tmax);
         lv_obj_t *lte = lv_label_create(cell);
         lv_obj_set_style_text_font(lte, FONT_MED, 0);
         lv_obj_set_style_text_color(lte, lv_color_hex(0xffffff), 0);
         lv_label_set_text(lte, tt);
-        lv_obj_align(lte, LV_ALIGN_CENTER, 0, 4);
+        lv_obj_align(lte, LV_ALIGN_CENTER, 0, 32);
 
         char cd[40]; de_ascii(d.fc[k].desc, cd, sizeof(cd));
         if (cd[0] >= 'a' && cd[0] <= 'z') cd[0] = (char)(cd[0] - 'a' + 'A');   // nur ASCII gross
