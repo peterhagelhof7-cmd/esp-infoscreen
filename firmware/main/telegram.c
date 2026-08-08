@@ -18,6 +18,7 @@
 #include "cJSON.h"
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
+#include "esp_attr.h"
 #include "esp_log.h"
 
 static const char *TAG = "telegram";
@@ -25,7 +26,7 @@ static const char *TAG = "telegram";
 
 // --- Zustand ----------------------------------------------------------------
 static SemaphoreHandle_t s_lock;
-static tg_msg_t s_hist[TG_MAX_MSGS];
+static EXT_RAM_BSS_ATTR tg_msg_t s_hist[TG_MAX_MSGS];   // PSRAM
 static int      s_hist_count;
 static int      s_hist_head;      // Index der aeltesten Nachricht
 static unsigned s_version;        // erhoeht sich bei jeder neuen Nachricht
@@ -169,14 +170,14 @@ static void build_termine(char *out, size_t len)
     // static: build_termine laeuft nur im Telegram-Task (nicht reentrant) ->
     // haelt den Task-Stack frei (grosse Arrays sonst = Stack-Overflow).
     typedef struct { char date[11]; char label[64]; } ev_t;
-    static ev_t ev[100];
+    static EXT_RAM_BSS_ATTR ev_t ev[100];   // PSRAM
     int n = 0;
     char today[16] = { 0 };
     time_t now = time(NULL);
     struct tm tm; localtime_r(&now, &tm);
     if (tm.tm_year > 120) strftime(today, sizeof(today), "%Y-%m-%d", &tm);
 
-    static termine_entry_t te[50];
+    static EXT_RAM_BSS_ATTR termine_entry_t te[50];   // PSRAM
     int tn = termine_get_all(te, 50);
     for (int i = 0; i < tn && n < 100; i++) {
         if (today[0] && strcmp(te[i].date, today) < 0) continue;
@@ -185,7 +186,7 @@ static void build_termine(char *out, size_t len)
         else               snprintf(ev[n].label, sizeof(ev[n].label), "%s", te[i].title);
         n++;
     }
-    static muell_entry_t me[48];
+    static EXT_RAM_BSS_ATTR muell_entry_t me[48];   // PSRAM
     int mn = muell_get(me, 48);
     for (int i = 0; i < mn && n < 100; i++) {
         strncpy(ev[n].date, me[i].day, 10); ev[n].date[10] = '\0';

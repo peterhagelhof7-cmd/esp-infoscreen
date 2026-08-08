@@ -14,6 +14,7 @@
 #include "freertos/task.h"
 #include "esp_http_server.h"
 #include "esp_system.h"
+#include "esp_attr.h"
 #include "esp_log.h"
 #include "cJSON.h"
 
@@ -462,7 +463,7 @@ static esp_err_t slides_post(httpd_req_t *req)
 
 static esp_err_t configdl_get(httpd_req_t *req)
 {
-    static char buf[8192];   // Termine-Liste kann gross sein
+    static EXT_RAM_BSS_ATTR char buf[8192];   // PSRAM: Termine-Liste kann gross sein
     int n = config_export_json(buf, sizeof(buf));
     if (n < 0) { httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Export fehlgeschlagen"); return ESP_OK; }
     httpd_resp_set_type(req, "application/json");
@@ -473,7 +474,7 @@ static esp_err_t configdl_get(httpd_req_t *req)
 
 static esp_err_t configul_post(httpd_req_t *req)
 {
-    static char buf[8192];
+    static EXT_RAM_BSS_ATTR char buf[8192];   // PSRAM
     int total = req->content_len < (int)sizeof(buf) - 1 ? req->content_len : (int)sizeof(buf) - 1;
     int recvd = httpd_req_recv(req, buf, total);
     if (recvd <= 0) return ESP_FAIL;
@@ -709,8 +710,17 @@ void web_server_start(void)
     cfg.stack_size = 12288;
     cfg.max_uri_handlers = 28;
     httpd_handle_t server = NULL;
-    if (httpd_start(&server, &cfg) != ESP_OK) {
-        ESP_LOGE(TAG, "HTTP-Server-Start fehlgeschlagen");
+    // httpd_start kann beim Boot transient scheitern (interner RAM durch WiFi-Init
+    // gerade knapp / TCP-IP noch nicht bereit) -> mehrfach versuchen, Fehler loggen.
+    esp_err_t err = ESP_FAIL;
+    for (int attempt = 1; attempt <= 10; attempt++) {
+        err = httpd_start(&server, &cfg);
+        if (err == ESP_OK) break;
+        ESP_LOGW(TAG, "httpd_start Versuch %d/%d: %s", attempt, 10, esp_err_to_name(err));
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "HTTP-Server-Start endgueltig fehlgeschlagen: %s", esp_err_to_name(err));
         return;
     }
     httpd_uri_t root = { .uri = "/", .method = HTTP_GET, .handler = root_get };

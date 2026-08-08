@@ -9,6 +9,7 @@
 #include "freertos/semphr.h"
 #include "cJSON.h"
 #include "esp_heap_caps.h"
+#include "esp_attr.h"
 #include "esp_log.h"
 
 static const char *TAG = "muell";
@@ -18,7 +19,7 @@ static const char *TAG = "muell";
 #define PARSE_BUF   32768
 #define POLL_INTERVAL_MS (6 * 60 * 60 * 1000)   // alle 6 Stunden
 
-static muell_entry_t s_list[MAX_ENTRIES];
+static EXT_RAM_BSS_ATTR muell_entry_t s_list[MAX_ENTRIES];   // PSRAM
 static int s_count;
 static SemaphoreHandle_t s_lock;
 

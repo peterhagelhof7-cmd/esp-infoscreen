@@ -15,6 +15,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <time.h>
+#include "esp_attr.h"
 #include "lvgl.h"
 
 // Umlaute/ss fuer die eingebauten LVGL-Schriften transliterieren (ue/oe/ae/ss),
@@ -352,9 +353,10 @@ static void calendar_build(lv_obj_t *p)
     char today[11]; time_today_str(today, sizeof(today));
 
     // Statisch (laeuft nur im LVGL-Task, nicht reentrant) -> spart Stack.
-    static cal_event_t ev[100];
-    static termine_entry_t te[50];
-    static muell_entry_t me[48];
+    // EXT_RAM_BSS_ATTR: im PSRAM, entlastet den knappen internen RAM.
+    static EXT_RAM_BSS_ATTR cal_event_t ev[100];
+    static EXT_RAM_BSS_ATTR termine_entry_t te[50];
+    static EXT_RAM_BSS_ATTR muell_entry_t me[48];
     int n = 0;
 
     // Nutzer-Termine
@@ -495,7 +497,7 @@ static unsigned mb_last_ver = (unsigned)-1;
 static void msgboard_render(void)
 {
     if (!mb_label) return;
-    static tg_msg_t msgs[TG_MAX_MSGS];   // laeuft nur im LVGL-Task (nicht reentrant)
+    static EXT_RAM_BSS_ATTR tg_msg_t msgs[TG_MAX_MSGS];   // PSRAM, LVGL-Task (nicht reentrant)
     int n = telegram_get_history(msgs, TG_MAX_MSGS);
 
     if (!telegram_configured()) {
@@ -510,7 +512,7 @@ static void msgboard_render(void)
         return;
     }
 
-    static char text[2600];
+    static EXT_RAM_BSS_ATTR char text[2600];   // PSRAM
     int start = n > 12 ? n - 12 : 0;   // die letzten bis zu 12 Zeilen
     size_t o = 0;
     for (int i = start; i < n && o + 4 < sizeof(text); i++) {
