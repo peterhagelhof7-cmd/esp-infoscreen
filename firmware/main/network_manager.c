@@ -241,7 +241,13 @@ void network_manager_get_status(net_status_t *out)
 
 int network_manager_scan(net_ap_t *list, int max)
 {
-    wifi_scan_config_t sc = { .show_hidden = false };
+    // Aktiver Scan mit etwas laengerer Verweildauer je Kanal -> findet auch
+    // schwaechere/langsamere APs (im verbundenen Zustand sonst schnell zu wenige).
+    wifi_scan_config_t sc = {
+        .show_hidden = false,
+        .scan_type = WIFI_SCAN_TYPE_ACTIVE,
+        .scan_time = { .active = { .min = 120, .max = 300 } },
+    };
     esp_err_t err = esp_wifi_scan_start(&sc, true);
     if (err != ESP_OK) { ESP_LOGW(TAG, "Scan-Start fehlgeschlagen: %s", esp_err_to_name(err)); return 0; }
     uint16_t num = 0;

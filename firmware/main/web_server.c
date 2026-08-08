@@ -132,6 +132,8 @@ static esp_err_t settings_get(httpd_req_t *req)
 
     httpd_resp_sendstr_chunk(req,
         "</select>"
+        "<label>oder SSID manuell (falls nicht in der Liste)</label>"
+        "<input type=text name=ssid_manual placeholder='SSID manuell eingeben (optional)' autocomplete=off>"
         "<label>Passwort</label><input type=password name=pass placeholder='WLAN-Passwort'>"
         "<button type=submit>Speichern &amp; Neustart</button></form>"
         "<a href=/settings style='display:block;text-align:center;color:#8ab4f8;margin-top:10px;font-size:13px'>Netzwerke neu suchen</a>");
@@ -628,13 +630,16 @@ static esp_err_t save_post(httpd_req_t *req)
     if (recvd <= 0) return ESP_FAIL;
     body[recvd] = '\0';
 
-    char ssid[33] = { 0 }, pass[65] = { 0 };
+    char ssid[33] = { 0 }, ssid_manual[33] = { 0 }, pass[65] = { 0 };
     form_field(body, "ssid", ssid, sizeof(ssid));
+    form_field(body, "ssid_manual", ssid_manual, sizeof(ssid_manual));
     form_field(body, "pass", pass, sizeof(pass));
 
-    if (ssid[0] == '\0') {
+    // Manuell eingetippte SSID hat Vorrang (falls das Netz nicht im Scan war).
+    const char *use_ssid = ssid_manual[0] ? ssid_manual : ssid;
+    if (use_ssid[0] == '\0') {
         httpd_resp_set_status(req, "400 Bad Request");
-        httpd_resp_sendstr(req, "SSID fehlt.");
+        httpd_resp_sendstr(req, "SSID fehlt (Netz w\xc3\xa4hlen oder manuell eingeben).");
         return ESP_OK;
     }
 
@@ -643,8 +648,8 @@ static esp_err_t save_post(httpd_req_t *req)
         "<!doctype html><meta charset=utf-8><body style='font-family:sans-serif;background:#101830;color:#eee;padding:24px'>"
         "<h2>Gespeichert.</h2><p>Das Ger\xc3\xa4t startet neu und verbindet sich mit dem WLAN.</p></body>");
 
-    ESP_LOGI(TAG, "WLAN-Konfiguration empfangen (SSID \"%s\")", ssid);
-    network_manager_apply_wifi(ssid, pass);   // speichert + Neustart
+    ESP_LOGI(TAG, "WLAN-Konfiguration empfangen (SSID \"%s\")", use_ssid);
+    network_manager_apply_wifi(use_ssid, pass);   // speichert + Neustart
     return ESP_OK;
 }
 
