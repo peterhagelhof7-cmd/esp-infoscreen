@@ -14,12 +14,16 @@
 #include "mdns.h"
 
 static const char *TAG = "network";
-#define MAX_STA_RETRY 8
+// Harter Zeit-Fallback: ist die STA nach dieser Zeit ab Boot nicht verbunden
+// (SSID nicht gefunden / falsches Passwort / AP weg), wird der Einrichtungs-AP
+// gestartet. ~1 Slideshow-Durchlauf (9 Slides x 10 s).
+#define STA_FALLBACK_MS (90 * 1000)
 
 static net_status_t s_status;
 static SemaphoreHandle_t s_lock;
 static int s_retry;
 static bool s_ap_started;
+static esp_timer_handle_t s_fb_timer;
 
 // --- gleitender RSSI-Mittelwert (letzte ~20 s, 1x/s abgetastet) ---
 #define RSSI_WINDOW 20
@@ -76,22 +80,39 @@ static void start_installer_ap(void)
     xSemaphoreGive(s_lock);
 }
 
+// Zeit-Fallback: nach STA_FALLBACK_MS ohne Verbindung -> Einrichtungs-AP.
+static void fallback_cb(void *arg)
+{
+    (void)arg;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    bool connected = s_status.connected;
+    net_mode_t mode = s_status.mode;
+    xSemaphoreGive(s_lock);
+    if (!connected && mode != NET_MODE_INSTALLER_AP) {
+        ESP_LOGE(TAG, "WLAN nach %d s nicht verbunden -> Einrichtungs-AP", STA_FALLBACK_MS / 1000);
+        start_installer_ap();
+    }
+}
+
+static void start_fallback_timer(void)
+{
+    if (!s_fb_timer) return;
+    esp_timer_stop(s_fb_timer);   // ggf. laufenden neu aufsetzen (harmlos, wenn keiner laeuft)
+    esp_timer_start_once(s_fb_timer, (uint64_t)STA_FALLBACK_MS * 1000);
+}
+
 static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
         if (s_status.mode == NET_MODE_INSTALLER_AP) return;   // im AP-Modus nicht dagegenarbeiten
-        if (s_retry < MAX_STA_RETRY) {
-            s_retry++;
-            ESP_LOGW(TAG, "STA getrennt, erneuter Versuch %d/%d", s_retry, MAX_STA_RETRY);
-            esp_wifi_connect();
-        } else {
-            ESP_LOGE(TAG, "WLAN nach %d Versuchen nicht erreichbar -> Einrichtungs-AP", MAX_STA_RETRY);
-            start_installer_ap();
-        }
+        s_retry++;
+        ESP_LOGW(TAG, "STA getrennt (Versuch %d), erneut ...", s_retry);
+        esp_wifi_connect();   // weiter versuchen; der Zeit-Fallback greift nach STA_FALLBACK_MS
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *ev = (ip_event_got_ip_t *)data;
+        if (s_fb_timer) esp_timer_stop(s_fb_timer);   // verbunden -> Fallback abbrechen
         s_retry = 0;
         xSemaphoreTake(s_lock, portMAX_DELAY);
         s_status.mode = NET_MODE_STA_CONNECTED;
@@ -125,6 +146,8 @@ static void connect_sta(void)
     s_status.mode = NET_MODE_STA_CONNECTING;
     strncpy(s_status.ssid, ssid, sizeof(s_status.ssid));
     xSemaphoreGive(s_lock);
+
+    start_fallback_timer();   // nach STA_FALLBACK_MS ohne Verbindung -> Einrichtungs-AP
 }
 
 void network_manager_init(void)
@@ -137,6 +160,10 @@ void network_manager_init(void)
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     esp_netif_t *sta_netif = esp_netif_create_default_wifi_sta();
     esp_netif_create_default_wifi_ap();
+
+    // Einmaliger Fallback-Timer (STA -> Einrichtungs-AP), Callback siehe oben
+    const esp_timer_create_args_t fb = { .callback = fallback_cb, .name = "wifi_fallback" };
+    esp_timer_create(&fb, &s_fb_timer);
 
     // Hostname = Geraetename (Default esp-infoscreen)
     char host[32];
