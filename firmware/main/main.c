@@ -15,16 +15,34 @@
 #include "spessart.h"
 #include "owm.h"
 #include "telegram.h"
+#include "kino.h"
 
+#include <stdlib.h>
 #include "esp_log.h"
 #include "esp_psram.h"
+#include "esp_heap_caps.h"
+#include "cJSON.h"
 
 static const char *TAG = "infoscreen";
+
+// cJSON-Allokationen ins PSRAM verlagern: die JSON-Parser (muell/nina/telegram/
+// kino) erzeugen viele kleine Knoten; im knappen internen Heap kann das beim
+// grossen Kino-Abruf (~44 KB) eng werden. free() funktioniert unter ESP-IDF
+// fuer beide Heap-Regionen, daher genuegt der PSRAM-malloc-Hook.
+static void *json_psram_malloc(size_t sz)
+{
+    void *p = heap_caps_malloc(sz, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    return p ? p : malloc(sz);
+}
 
 void app_main(void)
 {
     ESP_LOGI(TAG, "esp-infoscreen startet");
     ESP_LOGI(TAG, "PSRAM: %u Bytes", (unsigned)esp_psram_get_size());
+
+    // cJSON-Speicher ins PSRAM legen (vor dem ersten Parse durch die Poller).
+    cJSON_Hooks jh = { .malloc_fn = json_psram_malloc, .free_fn = free };
+    cJSON_InitHooks(&jh);
 
     ota_manager_init();
     config_store_init();
@@ -45,6 +63,7 @@ void app_main(void)
     // Erzeugen aller Poller-Tasks ist der Heap zu fragmentiert -> xTaskCreate
     // scheitert (httpd: ESP_ERR_HTTPD_TASK; telegram: Task laeuft nie).
     web_server_start();
+    kino_init();       // Kino-Cache (kein Task; Refresh laeuft im Telegram-Task)
     telegram_init();   // Telegram-Bot / Message Board
 
     fritzbox_init();   // UPnP/IGD

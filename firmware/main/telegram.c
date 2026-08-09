@@ -7,6 +7,7 @@
 #include "muell.h"
 #include "dwd.h"
 #include "nina.h"
+#include "kino.h"
 #include "sysstatus.h"
 
 #include <string.h>
@@ -267,13 +268,15 @@ static void cmd_new_termin(const char *rest)
 // Kommandoliste ausgeben.
 static void send_help(void)
 {
-    char msg[400];
+    char msg[520];
     snprintf(msg, sizeof(msg),
         "\xF0\x9F\xA4\x96 Kommandos (@%s ...):\n"
         "\xE2\x80\xA2 Wetter \xE2\x80\x93 aktuelle Spessartwetter-Werte\n"
         "\xE2\x80\xA2 internet \xE2\x80\x93 Internet-/Fritzbox-Daten\n"
         "\xE2\x80\xA2 termin \xE2\x80\x93 die n\xC3\xA4""chsten 2 Termine\n"
         "\xE2\x80\xA2 status \xE2\x80\x93 Uptime / Heap / WLAN\n"
+        "\xE2\x80\xA2 kino \xE2\x80\x93 aktuelles Kinoprogramm\n"
+        "\xE2\x80\xA2 kino preview \xE2\x80\x93 Programm ab n\xC3\xA4""chster Woche\n"
         "\xE2\x80\xA2 neu termin JJJJ-MM-TT Text \xE2\x80\x93 Termin anlegen",
         s_botname[0] ? s_botname : "bot");
     telegram_send(msg);
@@ -297,6 +300,16 @@ static void handle_command(const char *text)
     if (nt) {
         size_t pos = (size_t)(nt - low) + strlen("neu termin");
         cmd_new_termin(text + pos);   // Originaltext (Titel behaelt Gross/Klein)
+        return;
+    }
+
+    // Kino: eigenstaendige Kommandos (static buf haelt den Task-Stack frei).
+    // "kino preview" zuerst pruefen (enthaelt sonst "kino").
+    if (contains_ci(low, "kino")) {
+        static char kb[700];
+        if (contains_ci(low, "kino preview")) kino_build_preview(kb, sizeof(kb));
+        else                                  kino_build_current(kb, sizeof(kb));
+        telegram_send(kb);
         return;
     }
 
@@ -475,6 +488,7 @@ static void poll_task(void *arg)
         check_warning();
         check_nina();
         check_boe();
+        kino_refresh_if_due();   // Kinoprogramm hoechstens 1x pro Kalendertag laden
         // 10 s statt 4 s: deutlich seltenere TLS-Handshakes -> weniger PSRAM-
         // Bandbreiten-Spitzen, die die RGB-DMA stoeren (Display-Artefakte).
         // Bot-Kommandos werden dadurch max. ~10 s spaeter beantwortet.
