@@ -39,6 +39,12 @@ void app_main(void)
     network_manager_init();
     time_sync_init();
     http_util_init();  // serialisiert HTTPS-Abrufe (nur 1 TLS-Kontext gleichzeitig)
+
+    // Webserver VOR den Pollern starten: der httpd-Task braucht einen grossen
+    // zusammenhaengenden internen RAM-Block; nach dem Erzeugen aller Poller-Tasks
+    // ist der Heap zu fragmentiert -> httpd_start scheitert (ESP_ERR_HTTPD_TASK).
+    web_server_start();
+
     fritzbox_init();   // UPnP/IGD
     muell_init();      // MyMuell/jumomind
     dwd_init();        // Bright Sky (DWD-Warnungen)
@@ -55,9 +61,6 @@ void app_main(void)
     if (sec < 3) sec = 3;
     if (sec > 120) sec = 120;
     slideshow_start((uint32_t)sec * 1000);
-
-    // Web-Konfig + OTA
-    web_server_start();
 
     // Init erfolgreich -> Rollback abbrechen (frisch geflashte App gilt als ok)
     ota_manager_mark_valid();

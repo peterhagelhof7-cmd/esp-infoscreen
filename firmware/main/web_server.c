@@ -793,7 +793,9 @@ void web_server_start(void)
 {
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.lru_purge_enable = true;
-    cfg.stack_size = 12288;
+    // 8192 reicht: die grossen Settings-Puffer (aps/te) sind static, nicht auf
+    // dem Handler-Stack. Kleinerer Block passt auch bei fragmentiertem Heap.
+    cfg.stack_size = 8192;
     cfg.max_uri_handlers = 28;
     httpd_handle_t server = NULL;
     // httpd_start kann beim Boot transient scheitern (interner RAM durch WiFi-Init
