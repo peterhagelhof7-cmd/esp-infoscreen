@@ -18,6 +18,7 @@ idf_component_register(
         "owm.c"
         "telegram.c"
         "sysstatus.c"
+        "nina.c"
         "fonts/montserrat_de_14.c"
         "fonts/montserrat_de_28.c"
         "fonts/montserrat_de_48.c"

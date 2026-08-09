@@ -6,6 +6,7 @@
 #include "muell.h"
 #include "termine.h"
 #include "dwd.h"
+#include "nina.h"
 #include "spessart.h"
 #include "owm.h"
 #include "telegram.h"
@@ -530,10 +531,13 @@ static void calendar_build(lv_obj_t *p)
 
 static const slide_t SLIDE_CALENDAR = { "cal", "Termine", calendar_build, NULL };
 
-// ======================= Slide 6: Wetterwarnung (DWD) ========================
+// =================== Slide 6: Warnungen (BBK/NINA + DWD) =====================
+// Zeigt amtliche Katastrophen-/Bevoelkerungsschutz-Warnungen (BBK/NINA: MoWaS,
+// Hochwasser, KATWARN ...) und, falls dort nichts, DWD-Wetterwarnungen.
 static void dwd_build(lv_obj_t *p)
 {
-    dwd_data_t d; dwd_get(&d);
+    nina_data_t nn; nina_get(&nn);
+    dwd_data_t  d;  dwd_get(&d);
 
     lv_obj_t *l1 = lv_label_create(p);
     lv_obj_set_style_text_font(l1, FONT_BIG, 0);
@@ -541,27 +545,41 @@ static void dwd_build(lv_obj_t *p)
     lv_label_set_long_mode(l1, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_align(l1, LV_TEXT_ALIGN_CENTER, 0);
 
-    if (!d.valid) {
-        lv_label_set_text(l1, "DWD nicht erreichbar");
-        lv_obj_set_style_text_color(l1, lv_color_hex(0xb0b8d0), 0);
+    bool have_nina = nn.valid && nn.count > 0 && nn.headline[0];
+    bool have_dwd  = d.valid  && d.count  > 0 && d.headline[0];
+
+    if (!have_nina && !have_dwd) {
+        bool any = nn.valid || d.valid;
+        lv_label_set_text(l1, any ? "Keine Warnung" : "Warnquellen nicht erreichbar");
+        lv_obj_set_style_text_color(l1, lv_color_hex(any ? 0x7ce38b : 0xb0b8d0), 0);
         lv_obj_center(l1);
         return;
     }
-    if (d.count == 0) {
-        lv_label_set_text(l1, "Keine Wetterwarnung");
-        lv_obj_set_style_text_color(l1, lv_color_hex(0x7ce38b), 0);
-        lv_obj_center(l1);
-        return;
-    }
-    char hl[96]; de_ascii(d.headline, hl, sizeof(hl));
-    lv_label_set_text(l1, hl[0] ? hl : "Wetterwarnung aktiv");
-    uint32_t c = 0xf5c542;
-    if (strcmp(d.severity, "Severe") == 0 || strcmp(d.severity, "Extreme") == 0) c = 0xef6b6b;
+
+    // NINA hat Vorrang (amtlich, umfassend); sonst DWD.
+    const char *raw_hl, *sev, *src; int cnt;
+    if (have_nina) { raw_hl = nn.headline; sev = nn.severity; src = nn.provider[0] ? nn.provider : "BBK"; cnt = nn.count; }
+    else           { raw_hl = d.headline;  sev = d.severity;  src = "DWD";  cnt = d.count; }
+
+    char hl[96]; de_ascii(raw_hl, hl, sizeof(hl));
+    lv_label_set_text(l1, hl[0] ? hl : "Warnung aktiv");
+    uint32_t c = 0xf5c542;   // gelb (Minor/Moderate)
+    if (strcmp(sev, "Severe") == 0 || strcmp(sev, "Extreme") == 0) c = 0xef6b6b;  // rot
     lv_obj_set_style_text_color(l1, lv_color_hex(c), 0);
-    lv_obj_align(l1, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_align(l1, LV_ALIGN_CENTER, 0, -20);
+
+    // Fusszeile: Quelle + Anzahl
+    char sub[48];
+    if (cnt > 1) snprintf(sub, sizeof(sub), "Quelle: %s  -  %d Warnungen", src, cnt);
+    else         snprintf(sub, sizeof(sub), "Quelle: %s", src);
+    lv_obj_t *l2 = lv_label_create(p);
+    lv_obj_set_style_text_font(l2, FONT_MED, 0);
+    lv_obj_set_style_text_color(l2, lv_color_hex(0x8ab4f8), 0);
+    lv_label_set_text(l2, sub);
+    lv_obj_align(l2, LV_ALIGN_BOTTOM_MID, 0, -20);
 }
 
-static const slide_t SLIDE_DWD = { "dwd", "Wetterwarnung (DWD)", dwd_build, NULL };
+static const slide_t SLIDE_DWD = { "dwd", "Warnungen", dwd_build, NULL };
 
 // ==================== Slide 7: Spessartwetter (Temp/Wind) ====================
 static void spessart_build(lv_obj_t *p)

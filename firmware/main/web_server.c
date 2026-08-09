@@ -7,6 +7,7 @@
 #include "slides.h"
 #include "telegram.h"
 #include "muell.h"
+#include "nina.h"
 #include "sysstatus.h"
 
 #include <string.h>
@@ -257,6 +258,22 @@ static esp_err_t settings_get(httpd_req_t *req)
         "Breunsberg 7639, R\xc3\xbc" "ckersbach 53323, Steinbach 59146, Sternberg 59533.</div></div>",
         muellid_esc);
     httpd_resp_sendstr_chunk(req, muell_card);
+
+    // --- Warnungen-Card (BBK/NINA Regionalschluessel) ---
+    char ars[16]; config_get_str_def("nina_ars", ars, sizeof(ars), "096710000000");
+    char ars_esc[24]; html_escape(ars, ars_esc, sizeof(ars_esc));
+    char nina_card[560];
+    snprintf(nina_card, sizeof(nina_card),
+        "<div class=card style='margin-top:16px'>"
+        "<h1>Warnungen</h1><div class=sub>Katastrophenschutz (BBK/NINA)</div>"
+        "<form method=post action=/nina>"
+        "<label>Warnregion (Amtlicher Regionalschl\xc3\xbcssel, 12-stellig)</label>"
+        "<input type=text name=ars value=\"%s\" placeholder='096710000000'>"
+        "<button type=submit>Speichern</button></form>"
+        "<div class=st>Standard 096710000000 = Landkreis Aschaffenburg. Deckt MoWaS, "
+        "Hochwasser, KATWARN u. DWD ab. Kreis-Schl\xc3\xbcssel + \"0000000\".</div></div>",
+        ars_esc);
+    httpd_resp_sendstr_chunk(req, nina_card);
 
     // --- OpenWeatherMap-Card (API-Key + Standort) ---
     char owmkey[48] = { 0 };
@@ -569,6 +586,22 @@ static esp_err_t muell_post(httpd_req_t *req)
     return redirect_settings(req);
 }
 
+static esp_err_t nina_post(httpd_req_t *req)
+{
+    char body[64];
+    int total = req->content_len < (int)sizeof(body) - 1 ? req->content_len : (int)sizeof(body) - 1;
+    int recvd = total > 0 ? httpd_req_recv(req, body, total) : 0;
+    if (recvd < 0) return ESP_FAIL;
+    body[recvd > 0 ? recvd : 0] = '\0';
+
+    char ars[16] = { 0 };
+    form_field(body, "ars", ars, sizeof(ars));
+    config_set_str("nina_ars", ars[0] ? ars : "096710000000");
+    nina_refresh();   // sofort mit neuer Region neu abrufen
+    ESP_LOGI(TAG, "NINA-Warnregion (ARS) gesetzt: %s", ars[0] ? ars : "096710000000");
+    return redirect_settings(req);
+}
+
 static esp_err_t fritzbox_post(httpd_req_t *req)
 {
     char body[256];
@@ -783,6 +816,7 @@ void web_server_start(void)
     httpd_uri_t disp = { .uri = "/display", .method = HTTP_POST, .handler = display_post };
     httpd_uri_t fb   = { .uri = "/fritzbox", .method = HTTP_POST, .handler = fritzbox_post };
     httpd_uri_t mue  = { .uri = "/muell", .method = HTTP_POST, .handler = muell_post };
+    httpd_uri_t nna  = { .uri = "/nina", .method = HTTP_POST, .handler = nina_post };
     httpd_uri_t tadd = { .uri = "/tadd", .method = HTTP_POST, .handler = tadd_post };
     httpd_uri_t tdel = { .uri = "/tdel", .method = HTTP_POST, .handler = tdel_post };
     httpd_uri_t owm  = { .uri = "/owm", .method = HTTP_POST, .handler = owm_post };
@@ -803,6 +837,7 @@ void web_server_start(void)
     httpd_register_uri_handler(server, &disp);
     httpd_register_uri_handler(server, &fb);
     httpd_register_uri_handler(server, &mue);
+    httpd_register_uri_handler(server, &nna);
     httpd_register_uri_handler(server, &tadd);
     httpd_register_uri_handler(server, &tdel);
     httpd_register_uri_handler(server, &owm);

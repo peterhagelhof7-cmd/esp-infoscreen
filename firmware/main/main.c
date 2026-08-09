@@ -11,6 +11,7 @@
 #include "muell.h"
 #include "termine.h"
 #include "dwd.h"
+#include "nina.h"
 #include "spessart.h"
 #include "owm.h"
 #include "telegram.h"
@@ -41,6 +42,7 @@ void app_main(void)
     fritzbox_init();   // UPnP/IGD
     muell_init();      // MyMuell/jumomind
     dwd_init();        // Bright Sky (DWD-Warnungen)
+    nina_init();       // BBK/NINA (Katastrophen-/Bevoelkerungsschutz)
     spessart_init();   // spessartwetter.de
     owm_init();        // OpenWeatherMap
     termine_init();    // Auto-Aufraeumung vergangener Termine

@@ -6,6 +6,7 @@
 #include "termine.h"
 #include "muell.h"
 #include "dwd.h"
+#include "nina.h"
 #include "sysstatus.h"
 
 #include <string.h>
@@ -36,7 +37,8 @@ static char     s_botname[40];    // Username des Bots (von getMe), klein
 static long long s_offset;        // getUpdates-Offset (naechste update_id)
 static bool     s_primed;         // Startabgleich erledigt?
 static bool     s_greeted;        // Boot-Meldung gesendet?
-static char     s_last_warn[96];  // zuletzt gepostete Warnungs-Kopfzeile
+static char     s_last_warn[96];  // zuletzt gepostete DWD-Warnungs-Kopfzeile
+static char     s_last_nina[96];  // zuletzt gepostete BBK/NINA-Warnung
 
 // --- kleine Helfer ----------------------------------------------------------
 static void tolower_str(char *s)
@@ -404,6 +406,18 @@ static void check_warning(void)
     if (telegram_send(msg)) snprintf(s_last_warn, sizeof(s_last_warn), "%s", d.headline);
 }
 
+// Amtliche Katastrophen-/Bevoelkerungsschutz-Warnung (BBK/NINA) posten.
+static void check_nina(void)
+{
+    nina_data_t n; nina_get(&n);
+    if (!n.valid || n.count == 0 || n.headline[0] == '\0') return;
+    if (strcmp(n.headline, s_last_nina) == 0) return;   // schon gepostet
+    char msg[200];
+    snprintf(msg, sizeof(msg), "\xF0\x9F\x9A\xA8 Warnung (%s): %s",
+             n.provider[0] ? n.provider : "BBK", n.headline);
+    if (telegram_send(msg)) snprintf(s_last_nina, sizeof(s_last_nina), "%s", n.headline);
+}
+
 // --- Task -------------------------------------------------------------------
 static void poll_task(void *arg)
 {
@@ -440,6 +454,7 @@ static void poll_task(void *arg)
         if (last >= 0) s_offset = last + 1;
 
         check_warning();
+        check_nina();
         // 10 s statt 4 s: deutlich seltenere TLS-Handshakes -> weniger PSRAM-
         // Bandbreiten-Spitzen, die die RGB-DMA stoeren (Display-Artefakte).
         // Bot-Kommandos werden dadurch max. ~10 s spaeter beantwortet.
