@@ -146,7 +146,7 @@ void fritzbox_init(void)
 {
     s_lock = xSemaphoreCreateMutex();
     memset(&s_data, 0, sizeof(s_data));
-    xTaskCreate(poll_task, "fritzbox", 8192, NULL, 3, NULL);
+    xTaskCreate(poll_task, "fritzbox", 5120, NULL, 3, NULL);
 }
 
 void fritzbox_get(fritzbox_data_t *out)

@@ -40,10 +40,12 @@ void app_main(void)
     time_sync_init();
     http_util_init();  // serialisiert HTTPS-Abrufe (nur 1 TLS-Kontext gleichzeitig)
 
-    // Webserver VOR den Pollern starten: der httpd-Task braucht einen grossen
-    // zusammenhaengenden internen RAM-Block; nach dem Erzeugen aller Poller-Tasks
-    // ist der Heap zu fragmentiert -> httpd_start scheitert (ESP_ERR_HTTPD_TASK).
+    // Grosse Tasks (httpd, telegram) VOR den vielen Pollern erzeugen: sie
+    // brauchen einen grossen zusammenhaengenden internen RAM-Block; nach dem
+    // Erzeugen aller Poller-Tasks ist der Heap zu fragmentiert -> xTaskCreate
+    // scheitert (httpd: ESP_ERR_HTTPD_TASK; telegram: Task laeuft nie).
     web_server_start();
+    telegram_init();   // Telegram-Bot / Message Board
 
     fritzbox_init();   // UPnP/IGD
     muell_init();      // MyMuell/jumomind
@@ -52,7 +54,6 @@ void app_main(void)
     spessart_init();   // spessartwetter.de
     owm_init();        // OpenWeatherMap
     termine_init();    // Auto-Aufraeumung vergangener Termine
-    telegram_init();   // Telegram-Bot / Message Board
 
     // Slideshow aufbauen: Uhr/Datum, Netzwerk, WLAN-Empfang - alle 10 s wechseln
     slideshow_init(disp);

@@ -2,6 +2,7 @@
 #include "http_util.h"
 
 #include <string.h>
+#include <stdlib.h>
 #include <ctype.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -45,15 +46,21 @@ static void poll_once(void)
 
     int n = http_get(SPESSART_URL, buf, sizeof(buf));
     if (n > 0) {
-        char temp[16], wind[16];
+        char temp[16], wind[16], gust[16];
         // Temperatur: erste Zahl vor Grad-C  ("\xb0C" in ISO-8859-1)
         bool t_ok = number_before(buf, "\xb0" "C", temp, sizeof(temp));
-        // Wind: erste Zahl vor "km/h"
+        // Wind (Mittel): erste Zahl vor "km/h"
         bool w_ok = number_before(buf, "km/h", wind, sizeof(wind));
+        // Boeen: zweite Zahl vor "km/h" (Reihenfolge auf der Seite:
+        // Windgeschwindigkeit zuerst, danach Windboeen).
+        bool g_ok = false;
+        const char *first_kmh = strstr(buf, "km/h");
+        if (first_kmh) g_ok = number_before(first_kmh + 4, "km/h", gust, sizeof(gust));
         if (t_ok || w_ok) {
             d.valid = true;
             if (t_ok) strncpy(d.temp, temp, sizeof(d.temp) - 1);
             if (w_ok) strncpy(d.wind, wind, sizeof(d.wind) - 1);
+            if (g_ok) strncpy(d.gust, gust, sizeof(d.gust) - 1);
         } else {
             ESP_LOGW(TAG, "keine Werte gefunden (Layout geaendert?)");
         }
@@ -80,7 +87,7 @@ void spessart_init(void)
 {
     s_lock = xSemaphoreCreateMutex();
     memset(&s_data, 0, sizeof(s_data));
-    xTaskCreate(poll_task, "spessart", 8192, NULL, 3, NULL);
+    xTaskCreate(poll_task, "spessart", 7168, NULL, 3, NULL);
 }
 
 void spessart_get(spessart_data_t *out)
@@ -89,4 +96,13 @@ void spessart_get(spessart_data_t *out)
     xSemaphoreTake(s_lock, portMAX_DELAY);
     *out = s_data;
     xSemaphoreGive(s_lock);
+}
+
+double spessart_gust_kmh(const spessart_data_t *d)
+{
+    if (!d || !d->gust[0]) return 0.0;
+    char tmp[16];
+    strncpy(tmp, d->gust, sizeof(tmp) - 1); tmp[sizeof(tmp) - 1] = '\0';
+    for (char *c = tmp; *c; c++) if (*c == ',') *c = '.';   // deutsches Komma
+    return atof(tmp);
 }

@@ -215,7 +215,7 @@ void owm_init(void)
 {
     s_lock = xSemaphoreCreateMutex();
     memset(&s_data, 0, sizeof(s_data));
-    xTaskCreate(poll_task, "owm", 8192, NULL, 3, NULL);
+    xTaskCreate(poll_task, "owm", 7168, NULL, 3, NULL);
 }
 
 void owm_get(owm_data_t *out)

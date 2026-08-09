@@ -60,7 +60,7 @@ void dwd_init(void)
 {
     s_lock = xSemaphoreCreateMutex();
     memset(&s_data, 0, sizeof(s_data));
-    xTaskCreate(poll_task, "dwd", 8192, NULL, 3, NULL);
+    xTaskCreate(poll_task, "dwd", 7168, NULL, 3, NULL);
 }
 
 void dwd_get(dwd_data_t *out)

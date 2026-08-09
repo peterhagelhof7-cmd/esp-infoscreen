@@ -39,6 +39,8 @@ static bool     s_primed;         // Startabgleich erledigt?
 static bool     s_greeted;        // Boot-Meldung gesendet?
 static char     s_last_warn[96];  // zuletzt gepostete DWD-Warnungs-Kopfzeile
 static char     s_last_nina[96];  // zuletzt gepostete BBK/NINA-Warnung
+static bool     s_boe_warned;     // Boeen-Warnung aktiv (Hysterese gg. Spam)
+#define BOE_WARN_KMH 50.0         // Schwelle fuer die Boeen-Warnung
 
 // --- kleine Helfer ----------------------------------------------------------
 static void tolower_str(char *s)
@@ -406,6 +408,23 @@ static void check_warning(void)
     if (telegram_send(msg)) snprintf(s_last_warn, sizeof(s_last_warn), "%s", d.headline);
 }
 
+// Windboeen-Warnung (spessartwetter): postet EINMAL beim Ueberschreiten von
+// BOE_WARN_KMH; Hysterese (erst 5 km/h darunter zurueckgesetzt) verhindert Spam.
+static void check_boe(void)
+{
+    spessart_data_t s; spessart_get(&s);
+    if (!s.valid) return;
+    double g = spessart_gust_kmh(&s);
+    if (g >= BOE_WARN_KMH && !s_boe_warned) {
+        char msg[120];
+        snprintf(msg, sizeof(msg), "\xF0\x9F\x92\xA8 Windb\xC3\xB6" "en: %s km/h (spessartwetter)",
+                 s.gust[0] ? s.gust : "?");
+        if (telegram_send(msg)) s_boe_warned = true;
+    } else if (g < BOE_WARN_KMH - 5.0) {
+        s_boe_warned = false;   // wieder scharf, wenn es abflaut
+    }
+}
+
 // Amtliche Katastrophen-/Bevoelkerungsschutz-Warnung (BBK/NINA) posten.
 static void check_nina(void)
 {
@@ -455,6 +474,7 @@ static void poll_task(void *arg)
 
         check_warning();
         check_nina();
+        check_boe();
         // 10 s statt 4 s: deutlich seltenere TLS-Handshakes -> weniger PSRAM-
         // Bandbreiten-Spitzen, die die RGB-DMA stoeren (Display-Artefakte).
         // Bot-Kommandos werden dadurch max. ~10 s spaeter beantwortet.
@@ -465,5 +485,5 @@ static void poll_task(void *arg)
 void telegram_init(void)
 {
     s_lock = xSemaphoreCreateMutex();
-    xTaskCreate(poll_task, "telegram", 10240, NULL, 4, NULL);
+    xTaskCreate(poll_task, "telegram", 8192, NULL, 4, NULL);
 }

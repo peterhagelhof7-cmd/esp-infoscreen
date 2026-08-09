@@ -600,14 +600,22 @@ static void spessart_build(lv_obj_t *p)
     lv_obj_set_style_text_font(lt, FONT_BIG, 0);
     lv_obj_set_style_text_color(lt, lv_color_hex(0xffffff), 0);
     lv_label_set_text(lt, t);
-    lv_obj_align(lt, LV_ALIGN_CENTER, 0, -40);
+    lv_obj_align(lt, LV_ALIGN_CENTER, 0, -70);
 
     char w[32]; snprintf(w, sizeof(w), "Wind: %s km/h", s.wind[0] ? s.wind : "?");
     lv_obj_t *lw = lv_label_create(p);
     lv_obj_set_style_text_font(lw, FONT_MED, 0);
     lv_obj_set_style_text_color(lw, lv_color_hex(0x8ab4f8), 0);
     lv_label_set_text(lw, w);
-    lv_obj_align(lw, LV_ALIGN_CENTER, 0, 40);
+    lv_obj_align(lw, LV_ALIGN_CENTER, 0, 5);
+
+    // Windboeen; ab 50 km/h rot hervorheben.
+    char b[32]; snprintf(b, sizeof(b), "B\xc3\xb6" "en: %s km/h", s.gust[0] ? s.gust : "?");
+    lv_obj_t *lb = lv_label_create(p);
+    lv_obj_set_style_text_font(lb, FONT_MED, 0);
+    lv_obj_set_style_text_color(lb, lv_color_hex(spessart_gust_kmh(&s) >= 50.0 ? 0xef6b6b : 0xf5a742), 0);
+    lv_label_set_text(lb, b);
+    lv_obj_align(lb, LV_ALIGN_CENTER, 0, 60);
 }
 
 static const slide_t SLIDE_SPESSART = { "spessart", "Spessartwetter", spessart_build, NULL };
