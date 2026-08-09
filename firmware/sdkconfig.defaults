@@ -34,10 +34,13 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
 
 # --- RGB-LCD: Neustart des Panels im VSYNC (verhindert Bild-Drift) ---
 CONFIG_LCD_RGB_RESTART_IN_VSYNC=y
-# RGB-ISR IRAM-sicher: der Bounce-Buffer-Refill laeuft weiter, auch wenn WLAN
-# kurz den Flash-Cache abschaltet -> verhindert DMA-Underrun-Zeilen (Artefakte).
-# esp_lvgl_port unterstuetzt das (Callbacks sind LVGL_PORT_IRAM = IRAM_ATTR).
-CONFIG_LCD_RGB_ISR_IRAM_SAFE=y
+# ACHTUNG: CONFIG_LCD_RGB_ISR_IRAM_SAFE NICHT aktivieren, solange der Framebuffer
+# im PSRAM liegt (fb_in_psram=1)! Der IRAM-sichere RGB-ISR laeuft dann auch bei
+# abgeschaltetem Flash-Cache (z.B. NVS-Zugriff), der Bounce-Refill greift aber
+# auf den PSRAM-FB zu -> "Cache disabled but cached memory region accessed" ->
+# Boot-Loop (kein Rollback, da App schon als gueltig markiert). Deaktiviert
+# 2026-08-09. Artefakte werden stattdessen ueber 10s-Telegram-Poll + groesseren
+# Bounce-Puffer gedaempft; verbleibende Rest-Glitches sind selten.
 
 # --- HTTPS: Zertifikatsbundle (fuer esp_crt_bundle_attach) ---
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
