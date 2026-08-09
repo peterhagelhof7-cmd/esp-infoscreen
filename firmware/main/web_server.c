@@ -99,6 +99,11 @@ static esp_err_t settings_get(httpd_req_t *req)
     int n = network_manager_scan(aps, 16);
     ESP_LOGI(TAG, "Einstellungsseite: %d Netze im Dropdown", n);
 
+    // Gemeinsamer Karten-Puffer (static): alle Karten werden nacheinander hier
+    // aufgebaut und gesendet -> KEINE Aufsummierung auf dem Handler-Stack.
+    // (HTTP-Handler laufen alle im EINEN Server-Task, sequenziell -> reentrant-sicher.)
+    static char card[832];
+
     httpd_resp_set_type(req, "text/html; charset=utf-8");
     // Nicht cachen: sonst liefert der Browser beim "Netzwerke neu suchen" die
     // alte Seite (leeres/veraltetes Dropdown) statt neu zu scannen.
@@ -124,14 +129,14 @@ static esp_err_t settings_get(httpd_req_t *req)
 
     httpd_resp_sendstr_chunk(req, head);
 
-    // SSID max 32 Byte, HTML-escaped bis ~6x -> grosszuegig dimensionieren,
-    // damit der Compiler keine Truncation befuerchtet (esc 2x in row).
-    char esc[208], row[512];
+    // SSID max 32 Byte, HTML-escaped bis ~6x -> grosszuegig dimensionieren
+    // (esc taucht 2x in der Option auf). static: siehe card-Hinweis oben.
+    static char esc[208];
     for (int i = 0; i < n; i++) {
         html_escape(aps[i].ssid, esc, sizeof(esc));
-        snprintf(row, sizeof(row), "<option value=\"%s\">%s (%d dBm)%s</option>",
+        snprintf(card, sizeof(card), "<option value=\"%s\">%s (%d dBm)%s</option>",
                  esc, esc, aps[i].rssi, aps[i].secure ? " 🔒" : "");
-        httpd_resp_sendstr_chunk(req, row);
+        httpd_resp_sendstr_chunk(req, card);
     }
     if (n == 0) httpd_resp_sendstr_chunk(req, "<option value=''>(kein Netz gefunden)</option>");
 
@@ -143,31 +148,28 @@ static esp_err_t settings_get(httpd_req_t *req)
         "<button type=submit>Speichern &amp; Neustart</button></form>"
         "<a href=/settings style='display:block;text-align:center;color:#8ab4f8;margin-top:10px;font-size:13px'>Netzwerke neu suchen</a>");
 
-    char st_line[128];
     const char *modestr = (st.mode == NET_MODE_STA_CONNECTED) ? "verbunden"
                         : (st.mode == NET_MODE_INSTALLER_AP)  ? "Einrichtungs-AP"
                                                               : "verbinde...";
-    snprintf(st_line, sizeof(st_line), "<div class=st>Status: %s &middot; IP: %s</div>",
+    snprintf(card, sizeof(card), "<div class=st>Status: %s &middot; IP: %s</div>",
              modestr, st.ip[0] ? st.ip : "-");
-    httpd_resp_sendstr_chunk(req, st_line);
+    httpd_resp_sendstr_chunk(req, card);
     httpd_resp_sendstr_chunk(req, "</div>");   // WLAN-Card schliessen
 
     // --- Geraet-Card (Name) ---
     char devname[32]; config_get_str_def("dev_name", devname, sizeof(devname), "esp-infoscreen");
     char dvesc[64]; html_escape(devname, dvesc, sizeof(dvesc));
-    char dev_card[360];
-    snprintf(dev_card, sizeof(dev_card),
+    snprintf(card, sizeof(card),
         "<div class=card style='margin-top:16px'><h1>Ger\xc3\xa4t</h1><div class=sub>Name (Neustart)</div>"
         "<form method=post action=/device><input type=text name=name maxlength=31 value=\"%s\">"
         "<button type=submit>Speichern</button></form></div>", dvesc);
-    httpd_resp_sendstr_chunk(req, dev_card);
+    httpd_resp_sendstr_chunk(req, card);
 
     // --- Anzeige-Card: Helligkeit + Drehung + Slide-Auswahl + Intervall ---
     int bright = config_get_int("brightness", 100);
     int slide_sec = config_get_int("slide_sec", 10);
     char rot[4]; bool rotated = config_get_str("rot180", rot, sizeof(rot)) && rot[0] == '1';
-    char an1[720];
-    snprintf(an1, sizeof(an1),
+    snprintf(card, sizeof(card),
         "<div class=card style='margin-top:16px'><h1>Anzeige</h1>"
         "<form method=post action=/brightness>"
         "<label>Helligkeit: %d%%</label>"
@@ -178,26 +180,24 @@ static esp_err_t settings_get(httpd_req_t *req)
         "<input type=checkbox name=rot value=1 %s style='width:auto'> Um 180&deg; drehen (Neustart)</label>"
         "<button type=submit>\xc3\x9c" "bernehmen</button></form>",
         bright, bright, rotated ? "checked" : "");
-    httpd_resp_sendstr_chunk(req, an1);
+    httpd_resp_sendstr_chunk(req, card);
 
     httpd_resp_sendstr_chunk(req,
         "<form method=post action=/slides style='margin-top:8px'>"
         "<label>Angezeigte Slides</label>");
     for (int i = 0; i < slides_catalog_count(); i++) {
         char te[48]; html_escape(slides_catalog_title(i), te, sizeof(te));
-        char row[224];
-        snprintf(row, sizeof(row),
+        snprintf(card, sizeof(card),
             "<label style='display:flex;align-items:center;gap:10px;margin:4px 0'>"
             "<input type=checkbox name=s_%s value=1 %s style='width:auto'> %s</label>",
             slides_catalog_id(i), slides_catalog_enabled(i) ? "checked" : "", te);
-        httpd_resp_sendstr_chunk(req, row);
+        httpd_resp_sendstr_chunk(req, card);
     }
-    char iv[220];
-    snprintf(iv, sizeof(iv),
+    snprintf(card, sizeof(card),
         "<label>Wechsel alle (Sekunden)</label>"
         "<input type=number name=sec min=3 max=120 value=%d>"
         "<button type=submit>Speichern &amp; Neustart</button></form></div>", slide_sec);
-    httpd_resp_sendstr_chunk(req, iv);
+    httpd_resp_sendstr_chunk(req, card);
 
     // --- Termine-Card (anlegen / loeschen) ---
     httpd_resp_sendstr_chunk(req,
@@ -207,16 +207,16 @@ static esp_err_t settings_get(httpd_req_t *req)
         static termine_entry_t te[50];   // static: siehe aps-Hinweis oben (Stack)
         int tn = termine_get_all(te, 50);
         for (int i = 0; i < tn; i++) {
-            char de[128], row[640];
+            char de[128];
             html_escape(te[i].title, de, sizeof(de));
-            snprintf(row, sizeof(row),
+            snprintf(card, sizeof(card),
                 "<div style='display:flex;justify-content:space-between;align-items:center;margin:6px 0'>"
                 "<span>%s %s %s</span>"
                 "<form method=post action=/tdel style='margin:0'>"
                 "<input type=hidden name=i value=%d>"
                 "<button type=submit style='width:auto;padding:4px 10px;background:#8a3a3a'>x</button></form></div>",
                 te[i].date, te[i].time[0] ? te[i].time : "", de, i);
-            httpd_resp_sendstr_chunk(req, row);
+            httpd_resp_sendstr_chunk(req, card);
         }
         if (tn == 0) httpd_resp_sendstr_chunk(req, "<div class=st>keine Termine</div>");
     }
@@ -232,8 +232,7 @@ static esp_err_t settings_get(httpd_req_t *req)
     config_get_str("fb_host", fbhost, sizeof(fbhost));
     char fbesc[80];
     html_escape(fbhost, fbesc, sizeof(fbesc));
-    char fb_card[560];
-    snprintf(fb_card, sizeof(fb_card),
+    snprintf(card, sizeof(card),
         "<div class=card style='margin-top:16px'>"
         "<h1>Fritzbox</h1><div class=sub>Adresse (leer = Gateway)</div>"
         "<form method=post action=/fritzbox>"
@@ -242,13 +241,12 @@ static esp_err_t settings_get(httpd_req_t *req)
         "<div class=st>Nutzt UPnP/IGD (Port 49000). In der Fritzbox muss "
         "\"Statusinformationen &uuml;ber UPnP &uuml;bertragen\" aktiviert sein.</div></div>",
         fbesc);
-    httpd_resp_sendstr_chunk(req, fb_card);
+    httpd_resp_sendstr_chunk(req, card);
 
     // --- Muell-Card (jumomind Ortsteil-ID) ---
     char muellid[16]; config_get_str_def("muell_id", muellid, sizeof(muellid), "44886");
     char muellid_esc[24]; html_escape(muellid, muellid_esc, sizeof(muellid_esc));
-    char muell_card[560];
-    snprintf(muell_card, sizeof(muell_card),
+    snprintf(card, sizeof(card),
         "<div class=card style='margin-top:16px'>"
         "<h1>M\xc3\xbcll</h1><div class=sub>Ortsteil-ID (jumomind / MyM\xc3\xbcll)</div>"
         "<form method=post action=/muell>"
@@ -257,13 +255,12 @@ static esp_err_t settings_get(httpd_req_t *req)
         "<div class=st>Standard 44886 = Johannesberg-Oberafferbach. Andere: Johannesberg 29018, "
         "Breunsberg 7639, R\xc3\xbc" "ckersbach 53323, Steinbach 59146, Sternberg 59533.</div></div>",
         muellid_esc);
-    httpd_resp_sendstr_chunk(req, muell_card);
+    httpd_resp_sendstr_chunk(req, card);
 
     // --- Warnungen-Card (BBK/NINA Regionalschluessel) ---
     char ars[16]; config_get_str_def("nina_ars", ars, sizeof(ars), "096710000000");
     char ars_esc[24]; html_escape(ars, ars_esc, sizeof(ars_esc));
-    char nina_card[560];
-    snprintf(nina_card, sizeof(nina_card),
+    snprintf(card, sizeof(card),
         "<div class=card style='margin-top:16px'>"
         "<h1>Warnungen</h1><div class=sub>Katastrophenschutz (BBK/NINA)</div>"
         "<form method=post action=/nina>"
@@ -273,7 +270,7 @@ static esp_err_t settings_get(httpd_req_t *req)
         "<div class=st>Standard 096710000000 = Landkreis Aschaffenburg. Deckt MoWaS, "
         "Hochwasser, KATWARN u. DWD ab. Kreis-Schl\xc3\xbcssel + \"0000000\".</div></div>",
         ars_esc);
-    httpd_resp_sendstr_chunk(req, nina_card);
+    httpd_resp_sendstr_chunk(req, card);
 
     // --- OpenWeatherMap-Card (API-Key + Standort) ---
     char owmkey[48] = { 0 };
@@ -281,8 +278,7 @@ static esp_err_t settings_get(httpd_req_t *req)
     char owmloc[64] = { 0 };
     config_get_str("owm_loc", owmloc, sizeof(owmloc));
     char owmloc_esc[80]; html_escape(owmloc, owmloc_esc, sizeof(owmloc_esc));
-    char owm_card[640];
-    snprintf(owm_card, sizeof(owm_card),
+    snprintf(card, sizeof(card),
         "<div class=card style='margin-top:16px'>"
         "<h1>Wetter</h1><div class=sub>OpenWeatherMap</div>"
         "<form method=post action=/owm>"
@@ -295,7 +291,7 @@ static esp_err_t settings_get(httpd_req_t *req)
         has_key ? "gesetzt - zum \xc3\x84ndern neuen Key eingeben" : "noch nicht gesetzt",
         owmloc_esc,
         has_key ? "Key aktuell konfiguriert." : "");
-    httpd_resp_sendstr_chunk(req, owm_card);
+    httpd_resp_sendstr_chunk(req, card);
 
     // --- Telegram-Card (Bot-Token + Gruppen-ID) ---
     char tgchat[32] = { 0 };
@@ -303,8 +299,7 @@ static esp_err_t settings_get(httpd_req_t *req)
     char tgchat_esc[48]; html_escape(tgchat, tgchat_esc, sizeof(tgchat_esc));
     char tgtoken[64] = { 0 };
     bool has_tok = config_get_str("tg_token", tgtoken, sizeof(tgtoken)) && tgtoken[0];
-    char tg_card[720];
-    snprintf(tg_card, sizeof(tg_card),
+    snprintf(card, sizeof(card),
         "<div class=card style='margin-top:16px'>"
         "<h1>Telegram</h1><div class=sub>Message Board / Bot</div>"
         "<form method=post action=/tg/config>"
@@ -318,7 +313,7 @@ static esp_err_t settings_get(httpd_req_t *req)
         has_tok ? "gesetzt - zum \xc3\x84ndern neuen Token eingeben" : "noch nicht gesetzt",
         tgchat_esc,
         has_tok ? "Token aktuell konfiguriert." : "");
-    httpd_resp_sendstr_chunk(req, tg_card);
+    httpd_resp_sendstr_chunk(req, card);
 
     // --- Firmware-Update-Card (OTA) ---
     httpd_resp_sendstr_chunk(req,
@@ -339,12 +334,11 @@ static esp_err_t settings_get(httpd_req_t *req)
     // --- Status-Card (Uptime, Heap, PSRAM, WLAN, Firmware) ---
     {
         char status[240]; sysstatus_text(status, sizeof(status));
-        char status_card[420];
-        snprintf(status_card, sizeof(status_card),
+        snprintf(card, sizeof(card),
             "<div class=card style='margin-top:16px'><h1>Status</h1>"
             "<pre style='white-space:pre-wrap;margin:0;font-size:14px;color:#b0b8d0'>%s</pre></div>",
             status);
-        httpd_resp_sendstr_chunk(req, status_card);
+        httpd_resp_sendstr_chunk(req, card);
     }
 
     // --- System-Card (Einstellungen laden/speichern, Werksreset, Neustart) ---
