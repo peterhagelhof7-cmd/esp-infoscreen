@@ -57,3 +57,8 @@
 #define TF_PIN_MOSI             11
 #define TF_PIN_SCLK             12
 #define TF_PIN_MISO             13
+
+// --- P4-Anschluss (freie GPIOs, 4-Pin: 3V3 / GND / IO17 / IO18) ---
+// DHT22-Innenraumsensor: Data-Leitung an IO18. Externer Pull-up (4,7-10 kOhm)
+// zwischen Data und 3V3 empfohlen, falls das Sensormodul keinen eingebaut hat.
+#define DHT22_PIN                18

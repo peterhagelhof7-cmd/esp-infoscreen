@@ -8,6 +8,7 @@
 #include "dwd.h"
 #include "nina.h"
 #include "spessart.h"
+#include "dht22.h"
 #include "owm.h"
 #include "telegram.h"
 #include "config_store.h"
@@ -620,6 +621,37 @@ static void spessart_build(lv_obj_t *p)
 
 static const slide_t SLIDE_SPESSART = { "spessart", "Spessartwetter", spessart_build, NULL };
 
+// ================= Slide 8: Innenraum (DHT22 an P4/GPIO18) ===================
+static void innenraum_build(lv_obj_t *p)
+{
+    dht22_data_t d; dht22_get(&d);
+
+    if (!d.valid) {
+        lv_obj_t *l = lv_label_create(p);
+        lv_obj_set_style_text_font(l, FONT_MED, 0);
+        lv_obj_set_style_text_color(l, lv_color_hex(0xb0b8d0), 0);
+        lv_label_set_text(l, "Sensor nicht erreichbar");
+        lv_obj_center(l);
+        return;
+    }
+
+    char t[24]; snprintf(t, sizeof(t), "%.1f \xc2\xb0""C", d.temp_c);
+    lv_obj_t *lt = lv_label_create(p);
+    lv_obj_set_style_text_font(lt, FONT_BIG, 0);
+    lv_obj_set_style_text_color(lt, lv_color_hex(0xffffff), 0);
+    lv_label_set_text(lt, t);
+    lv_obj_align(lt, LV_ALIGN_CENTER, 0, -40);
+
+    char h[24]; snprintf(h, sizeof(h), "%.0f %% Luftfeuchte", d.hum_pct);
+    lv_obj_t *lh = lv_label_create(p);
+    lv_obj_set_style_text_font(lh, FONT_MED, 0);
+    lv_obj_set_style_text_color(lh, lv_color_hex(0x8ab4f8), 0);
+    lv_label_set_text(lh, h);
+    lv_obj_align(lh, LV_ALIGN_CENTER, 0, 45);
+}
+
+static const slide_t SLIDE_INNENRAUM = { "innen", "Innenraum", innenraum_build, NULL };
+
 // ==================== Slide 9: Message Board (Telegram) =====================
 // Zeigt den Chatverlauf der konfigurierten Telegram-Gruppe. Wird nur neu
 // gezeichnet, wenn sich der Verlauf geaendert hat (Versionszaehler).
@@ -682,7 +714,7 @@ static const slide_t SLIDE_MSGBOARD = { "msg", "Message Board", msgboard_build, 
 // Katalog aller Slides (Reihenfolge = Anzeigereihenfolge).
 static const slide_t *ALL_SLIDES[] = {
     &SLIDE_CLOCK, &SLIDE_OWM, &SLIDE_CALENDAR, &SLIDE_DWD,
-    &SLIDE_SPESSART, &SLIDE_FRITZBOX, &SLIDE_NETWORK, &SLIDE_WIFI,
+    &SLIDE_SPESSART, &SLIDE_INNENRAUM, &SLIDE_FRITZBOX, &SLIDE_NETWORK, &SLIDE_WIFI,
     &SLIDE_MSGBOARD,
 };
 #define N_SLIDES (int)(sizeof(ALL_SLIDES) / sizeof(ALL_SLIDES[0]))

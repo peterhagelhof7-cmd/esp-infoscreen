@@ -16,6 +16,7 @@
 #include "owm.h"
 #include "telegram.h"
 #include "kino.h"
+#include "dht22.h"
 
 #include <stdlib.h>
 #include "esp_log.h"
@@ -73,6 +74,7 @@ void app_main(void)
     spessart_init();   // spessartwetter.de
     owm_init();        // OpenWeatherMap
     termine_init();    // Auto-Aufraeumung vergangener Termine
+    dht22_init();      // Innenraumsensor (P4, GPIO18)
 
     // Slideshow aufbauen: Uhr/Datum, Netzwerk, WLAN-Empfang - alle 10 s wechseln
     slideshow_init(disp);

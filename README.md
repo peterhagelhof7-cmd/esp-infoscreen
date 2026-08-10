@@ -19,6 +19,7 @@ genutzten Datenquellen).
 - **Kalender / Termine** – selbst angelegte Termine **plus Müllabfuhr**, nach Datum sortiert
 - **DWD-Wetterwarnungen** – amtliche Warnungen (Bright Sky), farbcodiert nach Stufe
 - **Spessartwetter** – Temperatur/Wind von spessartwetter.de
+- **Innenraum** – Temperatur/Luftfeuchte vom lokalen DHT22-Sensor (P4-Anschluss)
 - **Internet / Fritzbox** – externe IP, Down-/Upload, Auslastung (UPnP/IGD, ohne Login)
 - **Netzwerk** – Modus, IP; **WLAN-Empfang** (dBm, 20-s-Mittel)
 - **Message Board** – Chatverlauf einer Telegram-Gruppe
@@ -46,6 +47,11 @@ Erstsetup per **Einrichtungs-AP**, **OTA mit automatischem Rollback**.
 **ESP32-8048S070** (Sunton), Variante **-N (ohne Touch)**: ESP32-S3-WROOM-1,
 7,0″ 800×480 RGB-Parallel-LCD (ST7262/EK9716), 8 MB Octal-PSRAM, 16 MB Flash.
 Stromversorgung über den USB-C-Port (der mit „USB", nicht den reinen Strom-Port).
+
+**Innenraumsensor (optional):** DHT22 am **P4**-Anschluss (4-Pin: 3V3 / GND /
+IO17 / IO18) — Data an **IO18** (`board_config.h`, `DHT22_PIN`). Externer
+Pull-up (4,7–10 kΩ) zwischen Data und 3V3 empfohlen, falls das Sensormodul
+keinen eingebauten hat.
 
 ## Installation (fertige Firmware)
 
