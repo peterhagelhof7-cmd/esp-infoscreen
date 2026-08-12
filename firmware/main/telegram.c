@@ -9,6 +9,8 @@
 #include "nina.h"
 #include "kino.h"
 #include "sysstatus.h"
+#include "dht22.h"
+#include "owm.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -265,13 +267,65 @@ static void cmd_new_termin(const char *rest)
     telegram_send(msg);
 }
 
+// Innenraum-Sensor (DHT22 am P4): Temperatur + Luftfeuchte.
+static void build_innen(char *out, size_t len)
+{
+    dht22_data_t d; dht22_get(&d);
+    if (d.valid)
+        snprintf(out, len, "\xF0\x9F\x8F\xA0 Innen: %.1f \xC2\xB0""C, %.0f%% rel. Luftfeuchte",
+                 d.temp_c, d.hum_pct);
+    else
+        snprintf(out, len, "\xF0\x9F\x8F\xA0 Innenraum-Sensor: noch kein Messwert.");
+}
+
+// Wetter-Vorhersage (OpenWeatherMap): aktuelle Lage + bis zu 3 Vorhersagetage,
+// moeglichst viel Info. Wird die Nachricht zu lang fuer telegram_send (GET/
+// enc[1024]-Limit), wird sie geteilt -> im Zweifel je Tag eine Nachricht.
+static void cmd_vorhersage(void)
+{
+    owm_data_t d; owm_get(&d);
+    if (!d.has_key) {
+        telegram_send("\xF0\x9F\x8C\xA4 Vorhersage: kein OpenWeatherMap-Key konfiguriert.");
+        return;
+    }
+    if (!d.valid && !d.fc_valid) {
+        telegram_send("\xF0\x9F\x8C\xA4 Vorhersage noch nicht verf\xC3\xBCgbar.");
+        return;
+    }
+
+    char msg[400];
+    size_t o = snprintf(msg, sizeof(msg), "\xF0\x9F\x8C\xA4 Wettervorhersage Johannesberg");
+    if (d.valid)
+        o += snprintf(msg + o, sizeof(msg) - o,
+            "\nJetzt: %d\xC2\xB0""C (gef\xC3\xBChlt %d), %s, %d%% rF, Wind %d km/h",
+            d.temp, d.feels, d.desc[0] ? d.desc : "-", d.humidity, d.wind_kmh);
+
+    for (int i = 0; i < 3; i++) {
+        if (!d.fc[i].valid) continue;
+        char line[128];
+        snprintf(line, sizeof(line), "\n%s: %d\xE2\x80\x93%d\xC2\xB0""C, %s",
+                 d.fc[i].label[0] ? d.fc[i].label : "?",
+                 d.fc[i].tmin, d.fc[i].tmax, d.fc[i].desc[0] ? d.fc[i].desc : "-");
+        const char *l = line;
+        if (o + strlen(l) >= 280) {   // vor dem enc-Limit teilen, dann neue Nachricht
+            telegram_send(msg);
+            o = 0; msg[0] = '\0';
+        }
+        if (o == 0 && *l == '\n') l++;   // kein fuehrender Zeilenumbruch am Anfang
+        o += snprintf(msg + o, sizeof(msg) - o, "%s", l);
+    }
+    if (o > 0) telegram_send(msg);
+}
+
 // Kommandoliste ausgeben.
 static void send_help(void)
 {
-    char msg[520];
+    char msg[640];
     snprintf(msg, sizeof(msg),
         "\xF0\x9F\xA4\x96 Kommandos (@%s ...):\n"
         "\xE2\x80\xA2 Wetter \xE2\x80\x93 aktuelle Spessartwetter-Werte\n"
+        "\xE2\x80\xA2 vorhersage \xE2\x80\x93 Wettervorhersage (OWM)\n"
+        "\xE2\x80\xA2 innen \xE2\x80\x93 Innenraum-Temperatur/-Feuchte (DHT22)\n"
         "\xE2\x80\xA2 internet \xE2\x80\x93 Internet-/Fritzbox-Daten\n"
         "\xE2\x80\xA2 termin \xE2\x80\x93 die n\xC3\xA4""chsten 2 Termine\n"
         "\xE2\x80\xA2 status \xE2\x80\x93 Uptime / Heap / WLAN\n"
@@ -313,10 +367,20 @@ static void handle_command(const char *text)
         return;
     }
 
+    // Vorhersage: eigenstaendig (sendet ggf. mehrere Nachrichten, je Tag eine).
+    if (contains_ci(low, "vorhersage")) {
+        cmd_vorhersage();
+        return;
+    }
+
     char reply[560]; bool any = false;
     reply[0] = '\0'; size_t o = 0;
     if (contains_ci(low, "wetter")) {
         char b[160]; build_weather(b, sizeof(b));
+        o += snprintf(reply + o, sizeof(reply) - o, "%s%s", any ? "\n" : "", b); any = true;
+    }
+    if (contains_ci(low, "innen")) {
+        char b[96]; build_innen(b, sizeof(b));
         o += snprintf(reply + o, sizeof(reply) - o, "%s%s", any ? "\n" : "", b); any = true;
     }
     if (contains_ci(low, "internet")) {
