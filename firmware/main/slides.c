@@ -252,7 +252,11 @@ static void owm_build(lv_obj_t *p)
         lv_obj_set_style_bg_opa(cell, LV_OPA_COVER, 0);
         lv_obj_set_style_border_color(cell, lv_color_hex(0x33406a), 0);
         lv_obj_set_style_border_width(cell, 2, 0);
-        lv_obj_set_style_radius(cell, 8, 0);
+        // Eckige Kaesten (radius 0): abgerundete Ecken = Anti-Aliasing-Masken, der
+        // teuerste Teil des Flush. Test gegen die OWM/Termine-Restartefakte
+        // (2026-08-12) ohne internes RAM zu belasten (Bounce liess sich nicht
+        // vergroessern -> "no mem"/Boot-Loop).
+        lv_obj_set_style_radius(cell, 0, 0);
         lv_obj_set_style_pad_all(cell, 6, 0);
         lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
 
@@ -516,7 +520,7 @@ static void calendar_build(lv_obj_t *p)
         lv_obj_set_style_bg_opa(box, LV_OPA_COVER, 0);
         lv_obj_set_style_border_color(box, lv_color_hex(0x33406a), 0);
         lv_obj_set_style_border_width(box, 2, 0);
-        lv_obj_set_style_radius(box, 8, 0);
+        lv_obj_set_style_radius(box, 0, 0);   // eckig: kein Ecken-Anti-Aliasing (Flush-Last senken)
         lv_obj_set_style_pad_left(box, 16, 0);
         lv_obj_clear_flag(box, LV_OBJ_FLAG_SCROLLABLE);
 
