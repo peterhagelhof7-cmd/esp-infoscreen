@@ -19,7 +19,29 @@ USB-C-Port mit der Beschriftung **„USB"** (nicht den reinen Strom-Port).
 
 ## 2. Firmware flashen
 
-### 2.1 Neues / leeres Gerät (per USB)
+### 2.1 Web-Flasher im Browser (am einfachsten, ohne Tool-Setup)
+
+Kein Python/PlatformIO nötig – direkt aus dem Browser flashen:
+
+1. Board per USB anschließen (der Port mit **„USB"**).
+2. In **Chrome, Edge oder Opera am Desktop** die Seite
+   **[peterhagelhof7-cmd.github.io/esp-infoscreen](https://peterhagelhof7-cmd.github.io/esp-infoscreen/)**
+   öffnen.
+3. **Verbinden** → im Port-Dialog das Gerät wählen → **Voll-Firmware flashen**.
+4. Nach dem Flashen startet das Gerät und spannt den Einrichtungs-AP auf (→ Abschnitt 3).
+
+> **Nur Chrome/Edge/Opera am Desktop** (die „Web Serial"-Schnittstelle fehlt in Firefox,
+> Safari und auf iPhone/iPad). Der native USB-Serial-JTAG des Boards (kein Treiber nötig)
+> funktioniert damit sofort.
+
+**Diagnose-/Inventur-Firmware.** Auf derselben Seite gibt es eine kleine
+**Diagnose-Firmware**, die nach dem Flashen im Browser eine „Inventur" ausgibt:
+Chip-Typ/-Revision, Flash- und PSRAM-Größe, MAC, **ob der DHT22 verbaut ist** (inkl.
+gefundenem GPIO) und **ob es die Touch-Variante ist** (über den I²C-Touch-Controller).
+Praktisch, um vor der Inbetriebnahme zu sehen, was auf dem Tisch liegt. Die Diagnose
+verändert die Konfiguration nicht; danach einfach die Voll-Firmware drüberflashen.
+
+### 2.2 Neues / leeres Gerät (per USB)
 
 Windows, im Projektordner:
 
@@ -31,7 +53,7 @@ tools\Flash.ps1 -Monitor   # zusätzlich seriellen Monitor (Bootlog) öffnen
 Das Skript installiert bei Bedarf Python, PlatformIO und die ESP-Toolchain selbst.
 Nach dem Flashen startet das Gerät und spannt den Einrichtungs-AP auf (→ Abschnitt 3).
 
-### 2.2 Laufendes Gerät aktualisieren (OTA, ohne Kabel)
+### 2.3 Laufendes Gerät aktualisieren (OTA, ohne Kabel)
 
 1. Aktuelle `esp-infoscreen-*.bin` aus den
    [Releases](https://github.com/peterhagelhof7-cmd/esp-infoscreen/releases) laden.
@@ -94,6 +116,12 @@ einen eigenen Access Point:
 - **Ortsteil-ID** (jumomind/MyMüll) – Standard `44886` (Johannesberg-Oberafferbach).
   Weitere IDs stehen als Hinweis in der Karte. Änderung wird **sofort** neu abgerufen.
 
+### Warnungen (BBK/NINA)
+- **Warngebiet (ARS)** – 12-stelliger amtlicher Regionalschlüssel für die
+  Bevölkerungsschutz-Warnungen (BBK/NINA). Standard `096710000000` (Landkreis
+  Aschaffenburg). Die Warnungen-Slide zeigt NINA-Warnungen vorrangig, sonst die
+  DWD-Wetterwarnung (→ Abschnitt 6.4).
+
 ### Fritzbox
 - **Adresse** – leer = Gateway; sonst IP/Hostname der Fritzbox. Voraussetzung: in der
   Fritzbox „Statusinformationen über UPnP übertragen" aktiv (→ Abschnitt 6.2).
@@ -137,12 +165,17 @@ Nach dem nächsten Poll meldet sich der Bot mit „Wieder da!" in der Gruppe.
 |---|---|
 | `@name` (ohne Wort) | Kommandoliste |
 | `@name Wetter` | aktuelle Spessartwetter-Werte |
+| `@name vorhersage` | OpenWeatherMap-Vorhersage (aktuell + bis zu 3 Tage) |
+| `@name innen` | Innenraum-Temperatur/-Luftfeuchte (DHT22) |
 | `@name internet` | Fritzbox: IP, Down/Up |
 | `@name termin` | nächste 2 Termine |
 | `@name neu termin JJJJ-MM-TT Text` | Termin anlegen (auch `TT.MM.JJJJ` / `TT.MM.`) |
 | `@name status` | Uptime, Heap, WLAN |
+| `@name kino` | Kinoprogramm ab heute (→ Abschnitt 6.5) |
+| `@name kino preview` | Kinoprogramm ab nächster Woche |
 
-Zusätzlich postet der Bot **DWD-Wetterwarnungen** automatisch in die Gruppe.
+Zusätzlich postet der Bot automatisch in die Gruppe: **Warnungen** (BBK/NINA und
+DWD-Wetterwarnungen) sowie eine **Windböen-Warnung** (ab 50 km/h laut Spessartwetter).
 
 ---
 
@@ -161,6 +194,26 @@ benötigt (nur die öffentlichen IGD-Statuswerte, Port 49000).
 ### 6.3 Müllabfuhr
 Läuft über die jumomind/MyMüll-API. Standard ist Johannesberg-Oberafferbach
 (`44886`); andere Ortsteile per ID in den Einstellungen (siehe Hinweis in der Karte).
+Kein Key nötig.
+
+### 6.4 Warnungen (BBK/NINA & DWD)
+Zwei kostenlose, keyless Quellen:
+- **Katastrophen-/Bevölkerungsschutz (BBK/NINA)** über `warnung.bund.de` – gesteuert
+  über das **Warngebiet (ARS)** in den Einstellungen (Standard Landkreis Aschaffenburg
+  `096710000000`). Den ARS des eigenen Kreises/der Gemeinde findet man z. B. über die
+  amtliche Regionalschlüssel-Liste (Kreisschlüssel + `0000000`).
+- **DWD-Wetterwarnungen** über **Bright Sky** (`api.brightsky.dev`) für die
+  hinterlegten Koordinaten. Dient als Fallback, wenn keine NINA-Warnung aktiv ist.
+
+Kein Account, kein Key. Sind keine Warnungen aktiv, zeigt die Slide „Keine".
+
+### 6.5 Kinoprogramm
+Das Kinoprogramm wird über das keylose kino.de-Backend geladen und **nur per
+Telegram-Bot** ausgegeben (`kino` / `kino preview`) – es gibt dafür keine Slide.
+Das Kino wird über den Config-Schlüssel **`kino_id`** gewählt (Standard `1405` =
+KINOPOLIS Aschaffenburg; `1711` = Casino Aschaffenburg). Die ID lässt sich über
+**Einstellungen → System → Einstellungen laden** (JSON mit `"kino_id": "…"`) setzen;
+ein eigenes Web-Feld gibt es dafür nicht. Höchstens ein Abruf pro Kalendertag.
 
 ---
 

@@ -17,8 +17,9 @@ genutzten Datenquellen).
 - **Uhr & Datum** – per NTP synchronisiert (Zeitzone Deutschland, Sommer-/Winterzeit)
 - **Wetter (OpenWeatherMap)** – aktuelle Werte + **Wetter-Icons** und 3-Tage-Vorhersage
 - **Kalender / Termine** – selbst angelegte Termine **plus Müllabfuhr**, nach Datum sortiert
-- **DWD-Wetterwarnungen** – amtliche Warnungen (Bright Sky), farbcodiert nach Stufe
-- **Spessartwetter** – Temperatur/Wind von spessartwetter.de
+- **Warnungen** – amtliche **Katastrophen-/Bevölkerungsschutz-Warnungen (BBK/NINA)** und
+  **DWD-Wetterwarnungen** (Bright Sky), farbcodiert nach Stufe
+- **Spessartwetter** – Temperatur/Wind **inkl. Windböen** von spessartwetter.de
 - **Innenraum** – Temperatur/Luftfeuchte vom lokalen DHT22-Sensor (P4-Anschluss)
 - **Internet / Fritzbox** – externe IP, Down-/Upload, Auslastung (UPnP/IGD, ohne Login)
 - **Netzwerk** – Modus, IP; **WLAN-Empfang** (dBm, 20-s-Mittel)
@@ -27,15 +28,17 @@ genutzten Datenquellen).
 **Telegram-Bot (optional):**
 
 - Zeigt/empfängt Gruppen-Nachrichten (auch im Webinterface, mit Sendefeld)
-- Auf `@bot`-Erwähnung: **Wetter**, **internet** (Fritzbox), **termin** (nächste 2),
-  **neu termin JJJJ-MM-TT Text**, **status** (Uptime/Heap/WLAN) – ohne Kommando: Hilfe
-- Postet **DWD-Warnungen** in die Gruppe, meldet sich nach Neustart
+- Auf `@bot`-Erwähnung: **Wetter** (Spessart), **vorhersage** (OpenWeatherMap, mehrtägig),
+  **innen** (DHT22-Innenraum), **internet** (Fritzbox), **termin** (nächste 2),
+  **neu termin JJJJ-MM-TT Text**, **status** (Uptime/Heap/WLAN),
+  **kino** / **kino preview** (Kinoprogramm) – ohne Kommando: Hilfe
+- Postet **Warnungen** (BBK/NINA + DWD) und **Windböen** in die Gruppe, meldet sich nach Neustart
 
 **Webinterface** (`http://<gerätename>.local` oder per IP):
 
 - **Message Board** als Startseite, Einstellungen hinter dem ⚙-Button
 - Gerätename, Helligkeit, Slide-Auswahl & -Intervall, 180°-Drehung (Deckenmontage)
-- OpenWeatherMap-Key & -Standort, Müll-Ortsteil, Fritzbox-Adresse, Telegram-Zugang
+- OpenWeatherMap-Key & -Standort, Müll-Ortsteil, Warngebiet (BBK/NINA), Fritzbox-Adresse, Telegram-Zugang
 - Termine anlegen/löschen · **Status** (Uptime/Heap/WLAN) · **Einstellungen sichern/laden**
 - **Firmware-Update (OTA)** · Neustart · **Werksreset**
 
@@ -54,6 +57,15 @@ Pull-up (4,7–10 kΩ) zwischen Data und 3V3 empfohlen, falls das Sensormodul
 keinen eingebauten hat.
 
 ## Installation (fertige Firmware)
+
+**Am einfachsten – Web-Flasher (Chrome/Edge, kein Tool-Setup):**
+
+Board per USB anschließen und im Browser
+**[peterhagelhof7-cmd.github.io/esp-infoscreen](https://peterhagelhof7-cmd.github.io/esp-infoscreen/)**
+öffnen → *Verbinden* → *Flashen*. Funktioniert nur in Chrome/Edge/Opera am Desktop
+(Web Serial). Zusätzlich gibt es dort eine **Diagnose-/Inventur-Firmware**, die Chip,
+PSRAM/Flash, DHT-Sensor und Touch-Variante ausliest. Details:
+**[docs/admin-guide.md](docs/admin-guide.md)**.
 
 **Neues / leeres Gerät – per USB (Windows):**
 
@@ -87,17 +99,7 @@ Git-Stand und erzwingt nach Konfig-Änderungen automatisch einen sauberen Reconf
 
 - `firmware/` — ESP-IDF-Projekt (PlatformIO); Quellcode in `firmware/main/`
 - `tools/` — `Flash.ps1` (Bauen/Flashen, Abhängigkeits-Setup)
-- `docs/` — Admin-Guide, Lastenheft, recherchierte Datenquellen
-- `referenzen/` — Datenblätter, Herstellerzeichnungen, CAD-Assets
-
-## Bekannte Probleme
-
-- **Countdown bis zum nächsten Slide wird nicht angezeigt.** Der Zähler ist im
-  Code angelegt (`firmware/main/slideshow.c`, Label `s_countdown`, unten rechts,
-  Aktualisierung in `tick_cb`), erscheint aber auf dem Display bisher nicht.
-  Noch zu untersuchen (mögliche Ursachen: Sichtbarkeit/Farbe/Position, Z-Order
-  gegenüber dem Inhaltsbereich, oder Redraw des Eck-Labels). *(offen, eingeführt
-  mit `fb74134`)*
+- `docs/` — Admin-Guide, Lastenheft, Datenquellen **und der Web-Flasher/Diagnose-Seite** (GitHub Pages, Quelle `/docs`)
 
 ## Über dieses Projekt
 
