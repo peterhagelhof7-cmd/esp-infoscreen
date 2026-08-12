@@ -56,8 +56,17 @@ lv_display_t *display_init(bool rot180)
         // dann ueber esp_lcd_panel_draw_bitmap, wodurch die HW-Spiegelung
         // (180-Grad-Drehung) tatsaechlich angewendet wird.
         // Groesserer Bounce-Puffer (internes SRAM) -> mehr Reserve gegen PSRAM-
-        // Bandbreiten-Aussetzer (WLAN/TLS) -> weniger DMA-Underrun-Artefakte.
-        .bounce_buffer_size_px = DISP_H_RES * 20,
+        // Bandbreiten-Aussetzer -> weniger DMA-Underrun-Artefakte. Auf *40 erhoeht
+        // (2026-08-12): Rest-Artefakte traten nur auf OWM/Termine auf, den einzigen
+        // Slides mit grossen opaken lv_obj-Kaesten (bg_opa COVER + border). Deren
+        // grossflaechiger Flush (LVGL-Zeichenpuffer + draw_bitmap, beide PSRAM)
+        // saettigt kurz die PSRAM-Bandbreite -> Bounce-Refill unterlaeuft ->
+        // Zeilenartefakte bleiben im Framebuffer stehen. Groesserer Bounce-Puffer
+        // (mehr vorgeladene Zeilen) faengt das Bandbreiten-Loch ab.
+        // WICHTIG: muss die Gesamt-Pixelzahl teilen -> N muss 480 teilen (480/40=12).
+        // Der Treiber legt ZWEI Puffer an -> internes SRAM = 2*800*40*2 B = 128 KB;
+        // steigt die httpd-/Task-Erzeugung wieder aus (internes RAM knapp), auf *30.
+        .bounce_buffer_size_px = DISP_H_RES * 40,
         .dma_burst_size = 64,                      // ersetzt sram/psram_trans_align (IDF >=5.3)
         .de_gpio_num = DISP_PIN_DE,
         .pclk_gpio_num = DISP_PIN_PCLK,
