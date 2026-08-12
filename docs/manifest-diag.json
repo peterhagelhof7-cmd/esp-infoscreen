@@ -1,0 +1,15 @@
+{
+  "name": "esp-infoscreen Diagnose",
+  "version": "1.0",
+  "new_install_prompt_erase": false,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        { "path": "fw/diag/bootloader.bin", "offset": 0 },
+        { "path": "fw/diag/partitions.bin", "offset": 32768 },
+        { "path": "fw/diag/app.bin", "offset": 65536 }
+      ]
+    }
+  ]
+}

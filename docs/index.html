@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>esp-infoscreen — Web-Flasher</title>
+<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+<style>
+  :root {
+    --bg: #0f1420; --card: #182033; --border: #2a3550; --fg: #e6e9f2;
+    --muted: #9aa4bf; --accent: #5b9bff; --ok: #46c46a; --warn: #e0a83c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px; background: var(--bg); color: var(--fg);
+    font: 15px/1.55 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  }
+  main { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  h2 { font-size: 18px; margin: 0 0 12px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 20px 22px; margin: 0 0 18px;
+  }
+  .card p { margin: 8px 0; }
+  .muted { color: var(--muted); }
+  .note {
+    background: #1d2740; border-left: 3px solid var(--accent); border-radius: 6px;
+    padding: 10px 14px; margin: 14px 0; color: var(--muted); font-size: 14px;
+  }
+  button, esp-web-install-button::part(button) {
+    background: var(--accent); color: #08101f; border: 0; border-radius: 8px;
+    padding: 10px 18px; font-size: 15px; font-weight: 600; cursor: pointer;
+  }
+  button.secondary {
+    background: transparent; color: var(--accent); border: 1px solid var(--accent);
+  }
+  button:disabled { opacity: .5; cursor: default; }
+  table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+  td { padding: 7px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  td.k { color: var(--muted); width: 130px; white-space: nowrap; }
+  td.v { font-variant-numeric: tabular-nums; }
+  .ok { color: var(--ok); } .warn { color: var(--warn); }
+  code { background: #0d1322; padding: 1px 6px; border-radius: 4px; }
+  a { color: var(--accent); }
+  footer { color: var(--muted); font-size: 13px; margin-top: 26px; text-align: center; }
+  .unsupported { display: none; }
+  .no-serial .unsupported { display: block; }
+</style>
+</head>
+<body>
+<main>
+  <h1>esp-infoscreen — Web-Flasher</h1>
+  <p class="sub">Firmware direkt aus dem Browser auf das ESP32-8048S070 flashen. Kein Tool-Setup nötig.</p>
+
+  <div class="note unsupported" id="browserWarn">
+    ⚠ Dieser Browser unterstützt <b>Web Serial</b> nicht. Bitte <b>Chrome, Edge oder Opera am Desktop</b>
+    verwenden (Firefox, Safari, iPhone/iPad funktionieren nicht).
+  </div>
+
+  <div class="card">
+    <h2>1 · Voll-Firmware</h2>
+    <p class="muted">Die komplette Infoscreen-Firmware (aktuelle Release-Version). Danach startet
+      das Gerät den Einrichtungs-Assistenten (WLAN-AP „installer").</p>
+    <esp-web-install-button manifest="manifest-full.json">
+      <button slot="activate">Voll-Firmware flashen</button>
+      <span slot="unsupported"></span>
+      <span slot="not-allowed"></span>
+    </esp-web-install-button>
+  </div>
+
+  <div class="card">
+    <h2>2 · Diagnose / Inventur</h2>
+    <p class="muted">Kleine Diagnose-Firmware: liest aus, was auf dem Board steckt — Chip, PSRAM/Flash,
+      DHT22-Sensor (inkl. gefundenem GPIO) und best-effort die Touch-Variante. Verändert keine
+      Einstellungen; danach einfach die Voll-Firmware drüberflashen.</p>
+    <p>
+      <esp-web-install-button manifest="manifest-diag.json">
+        <button slot="activate">Diagnose-Firmware flashen</button>
+        <span slot="unsupported"></span>
+        <span slot="not-allowed"></span>
+      </esp-web-install-button>
+    </p>
+    <p style="margin-top:16px">
+      <button id="readBtn" class="secondary">Inventur auslesen</button>
+      <span id="readStatus" class="muted"></span>
+    </p>
+    <div id="invOut"></div>
+  </div>
+
+  <footer>
+    <a href="https://github.com/peterhagelhof7-cmd/esp-infoscreen">Projekt auf GitHub</a> ·
+    <a href="https://github.com/peterhagelhof7-cmd/esp-infoscreen/blob/main/docs/admin-guide.md">Admin-Guide</a>
+  </footer>
+</main>
+
+<script>
+  // Browser-Unterstützung prüfen (Web Serial)
+  if (!('serial' in navigator)) {
+    document.body.classList.add('no-serial');
+    document.getElementById('readBtn').disabled = true;
+  }
+
+  const $ = (id) => document.getElementById(id);
+
+  function row(k, v, cls) {
+    return `<tr><td class="k">${k}</td><td class="v ${cls || ''}">${v}</td></tr>`;
+  }
+
+  function renderInventory(d) {
+    const dht = d.dht || {};
+    const i2c = d.i2c || {};
+    const dhtTxt = dht.found
+      ? `<span class="ok">erkannt</span> an GPIO${dht.gpio} (${dht.temp_c} °C / ${dht.hum} %)`
+      : `<span class="warn">nicht erkannt</span> (geprüft: GPIO18, GPIO17)`;
+    const foundList = (i2c.found && i2c.found.length) ? i2c.found.join(', ') : '–';
+    const touchTxt = (i2c.touch && i2c.touch !== 'nicht gefunden')
+      ? `<span class="ok">${i2c.touch}</span>`
+      : `nicht gefunden <span class="muted">(best-effort)</span>`;
+    $('invOut').innerHTML = `<table>
+      ${row('Chip', `${d.chip} rev ${d.rev} · ${d.cores} Core(s) · ${d.features}`)}
+      ${row('Flash', `${d.flash_mb} MB`)}
+      ${row('PSRAM', d.psram_mb ? `${d.psram_mb} MB` : '<span class="warn">nicht gefunden</span>')}
+      ${row('Int. RAM frei', `${d.int_ram_free_kb} KB`)}
+      ${row('MAC', `<code>${d.mac}</code>`)}
+      ${row('DHT22', dhtTxt)}
+      ${row('Touch', touchTxt)}
+      ${row('I²C-Adressen', `${foundList} <span class="muted">${i2c.note ? '· ' + i2c.note : ''}</span>`)}
+    </table>`;
+  }
+
+  async function readInventory() {
+    if (!('serial' in navigator)) return;
+    const btn = $('readBtn'), status = $('readStatus');
+    let port;
+    try {
+      port = await navigator.serial.requestPort();
+      await port.open({ baudRate: 115200 });
+    } catch (e) {
+      status.textContent = ' — kein Port gewählt.';
+      return;
+    }
+    btn.disabled = true;
+    status.textContent = ' — lese … (Reset-Taste am Board hilft)';
+    const decoder = new TextDecoderStream();
+    const closed = port.readable.pipeTo(decoder.writable).catch(() => {});
+    const reader = decoder.readable.getReader();
+    let buf = '', done = false;
+    const deadline = Date.now() + 20000;
+    try {
+      while (!done && Date.now() < deadline) {
+        const { value, done: rdDone } = await reader.read();
+        if (rdDone) break;
+        buf += value;
+        let idx;
+        while ((idx = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, idx).trim();
+          buf = buf.slice(idx + 1);
+          if (line.startsWith('INV ')) {
+            try { renderInventory(JSON.parse(line.slice(4))); status.textContent = ' — fertig.'; }
+            catch (e) { status.textContent = ' — konnte Daten nicht lesen.'; }
+            done = true; break;
+          }
+        }
+      }
+      if (!done) status.textContent = ' — keine Diagnose-Daten empfangen (ist die Diagnose-Firmware geflasht?).';
+    } finally {
+      try { await reader.cancel(); } catch (e) {}
+      await closed;
+      try { await port.close(); } catch (e) {}
+      btn.disabled = false;
+    }
+  }
+
+  $('readBtn').addEventListener('click', readInventory);
+</script>
+</body>
+</html>

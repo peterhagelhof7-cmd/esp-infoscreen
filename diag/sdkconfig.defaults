@@ -1,0 +1,25 @@
+# ==== esp-infoscreen Diagnose-Firmware — ESP-IDF Grundkonfiguration (ESP32-S3) ====
+
+CONFIG_IDF_TARGET="esp32s3"
+
+# --- Flash: 16 MB, QIO 80 MHz ---
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+
+# --- PSRAM: 8 MB Octal (R8), 80 MHz --- damit esp_psram_get_size() etwas liefert.
+# IGNORE_NOTFOUND: bootet auch, wenn kein/anderes PSRAM verbaut ist (dann Groesse 0)
+# -> die Diagnose laeuft auf jeder Board-Variante.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_USE_MALLOC=y
+CONFIG_SPIRAM_IGNORE_NOTFOUND=y
+
+# --- CPU 240 MHz ---
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+
+# --- Eigene (einfache) Partitionstabelle ---
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"

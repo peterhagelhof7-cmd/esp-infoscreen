@@ -6,7 +6,18 @@ firmware/dependencies.lock
 firmware/sdkconfig
 firmware/sdkconfig.old
 firmware/sdkconfig.esp32-8048S070N
+# Diagnose-Firmware (eigenes PlatformIO-Projekt) — nur Quellen tracken
+diag/.pio/
+diag/build/
+diag/managed_components/
+diag/dependencies.lock
+diag/sdkconfig
+diag/sdkconfig.old
+diag/sdkconfig.diag
 *.bin
+# ...aber die Web-Flasher-Firmware-Images (GitHub Pages) MUESSEN mit rein:
+!docs/fw/full/*.bin
+!docs/fw/diag/*.bin
 
 # Betriebssystem / Editor
 Thumbs.db
