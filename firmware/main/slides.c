@@ -19,10 +19,7 @@
 #include <ctype.h>
 #include <time.h>
 #include "esp_attr.h"
-#include "esp_log.h"
 #include "lvgl.h"
-
-static const char *SLIDES_TAG = "slides";
 
 // Die eigenen Fonts (fonts_de.h) enthalten echte Umlaut-Glyphen -> keine
 // Transliteration mehr noetig. de_ascii() kopiert nur noch UTF-8-sicher nach out
@@ -204,9 +201,6 @@ static lv_obj_t *weather_icon(lv_obj_t *p, const char *code, int box)
 static void owm_build(lv_obj_t *p)
 {
     owm_data_t d; owm_get(&d);
-    // DIAGNOSE (2026-08-12): was sieht der Renderer? -> Daten- vs. Render-Problem
-    ESP_LOGI(SLIDES_TAG, "owm_build: valid=%d fc_valid=%d fc0=%d fc1=%d fc2=%d",
-             d.valid, d.fc_valid, d.fc[0].valid, d.fc[1].valid, d.fc[2].valid);
 
     if (!d.has_key || !d.valid) {
         lv_obj_t *l = lv_label_create(p);

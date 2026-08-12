@@ -201,14 +201,7 @@ static void poll_forecast(void)
     s_data.fc_valid = fc[0].valid || fc[1].valid || fc[2].valid;
     memcpy(s_data.fc, fc, sizeof(fc));
     xSemaphoreGive(s_lock);
-    // DIAGNOSE (2026-08-12): zeigt, ob Tage gematcht haben. Zieldaten (lokal) vs.
-    // Treffer je Tag -> klaert, ob die fehlende Vorhersage ein Daten- oder ein
-    // Render-Problem ist.
-    ESP_LOGI(TAG, "Vorhersage: fc_valid=%d | %s=%s(%d/%d) %s=%s(%d/%d) %s=%s(%d/%d)",
-             s_data.fc_valid,
-             dates[0], fc[0].valid ? "ok" : "-", fc[0].tmin, fc[0].tmax,
-             dates[1], fc[1].valid ? "ok" : "-", fc[1].tmin, fc[1].tmax,
-             dates[2], fc[2].valid ? "ok" : "-", fc[2].tmin, fc[2].tmax);
+    ESP_LOGI(TAG, "Vorhersage aktualisiert (%d Tage)", fc[0].valid + fc[1].valid + fc[2].valid);
 }
 
 static void poll_task(void *arg)
