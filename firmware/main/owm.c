@@ -135,12 +135,18 @@ static void poll_forecast(void)
 
     char loc[96]; loc_part(loc, sizeof(loc));
     char url[320]; snprintf(url, sizeof(url), FC_URL, loc, key);
-    char *buf = heap_caps_malloc(32768, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (!buf) buf = malloc(32768);
+    // Die 5-Tage/3-Stunden-Antwort (40 Eintraege, lang=de) liegt bei ~30-36 KB
+    // und ist ueber die Zeit ueber die alten 32 KB gewachsen -> http_get schnitt
+    // die Antwort ab -> cJSON_Parse scheiterte -> keine Vorhersage. Grosszuegig
+    // im PSRAM (wie kino).
+    #define FC_BUF (96 * 1024)
+    char *buf = heap_caps_malloc(FC_BUF, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!buf) buf = malloc(FC_BUF);
     if (!buf) return;
 
-    int n = http_get(url, buf, 32768);
+    int n = http_get(url, buf, FC_BUF);
     if (n <= 0) { free(buf); ESP_LOGW(TAG, "Vorhersage: Abruf fehlgeschlagen"); return; }
+    if (n >= FC_BUF - 1) ESP_LOGW(TAG, "Vorhersage: Antwort >= %d B - Puffer evtl. zu klein", FC_BUF);
 
     cJSON *root = cJSON_Parse(buf);
     free(buf);
@@ -195,7 +201,14 @@ static void poll_forecast(void)
     s_data.fc_valid = fc[0].valid || fc[1].valid || fc[2].valid;
     memcpy(s_data.fc, fc, sizeof(fc));
     xSemaphoreGive(s_lock);
-    ESP_LOGI(TAG, "Vorhersage aktualisiert");
+    // DIAGNOSE (2026-08-12): zeigt, ob Tage gematcht haben. Zieldaten (lokal) vs.
+    // Treffer je Tag -> klaert, ob die fehlende Vorhersage ein Daten- oder ein
+    // Render-Problem ist.
+    ESP_LOGI(TAG, "Vorhersage: fc_valid=%d | %s=%s(%d/%d) %s=%s(%d/%d) %s=%s(%d/%d)",
+             s_data.fc_valid,
+             dates[0], fc[0].valid ? "ok" : "-", fc[0].tmin, fc[0].tmax,
+             dates[1], fc[1].valid ? "ok" : "-", fc[1].tmin, fc[1].tmax,
+             dates[2], fc[2].valid ? "ok" : "-", fc[2].tmin, fc[2].tmax);
 }
 
 static void poll_task(void *arg)
