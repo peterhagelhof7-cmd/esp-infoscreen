@@ -42,6 +42,13 @@ static bool read_once(float *temp_c, float *hum_pct)
     // waehrenddessen aus, sonst verfaelscht ein WLAN-/Timer-Interrupt die
     // Pulsbreiten-Messung. Bewusst kurz gehalten (kein RMT-Peripherie-Aufwand
     // fuer einen alle 15 s gelesenen, unkritischen Sensor).
+    //
+    // WICHTIG: portDISABLE_INTERRUPTS() sperrt nur den AKTUELLEN Core. Dieser
+    // Task ist deshalb bewusst auf Core 1 gepinnt (siehe dht22_init), waehrend
+    // das RGB-Panel in app_main auf Core 0 initialisiert wird -> dessen
+    // Bounce-Buffer-ISR laeuft auf Core 0 und fuellt den Framebuffer hier
+    // ununterbrochen weiter. Liefe der Read auf Core 0, verhungerte die ISR
+    // fuer ~5 ms -> sichtbare Display-Artefakte im 15-s-Takt.
     portDISABLE_INTERRUPTS();
 
     // Sensor-Antwort: 80 us Low, 80 us High, dann beginnen die 40 Datenbits.
@@ -121,7 +128,10 @@ void dht22_init(void)
     };
     gpio_config(&io);
 
-    xTaskCreate(poll_task, "dht22", 3072, NULL, 3, NULL);
+    // Auf Core 1 (APP_CPU) pinnen: der Read sperrt kurz die Interrupts, und das
+    // darf nur den Core treffen, der NICHT die RGB-Panel-ISR bedient (Core 0).
+    // Sonst -> Artefakte. Siehe Kommentar in read_once().
+    xTaskCreatePinnedToCore(poll_task, "dht22", 3072, NULL, 3, NULL, 1);
 }
 
 void dht22_get(dht22_data_t *out)

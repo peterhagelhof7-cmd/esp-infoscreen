@@ -20,7 +20,11 @@ static const char *TAG = "kino";
 // Aschaffenburg = 1405; Casino Aschaffenburg waere 1711).
 #define KINO_DEFAULT_ID "1405"
 #define MAX_MOVIES 40
-#define PARSE_BUF  (64 * 1024)   // Antwort ~44 KB -> PSRAM
+// Antwort waechst mit der Zahl der Vorstellungen (Aug 2026 bereits ~67 KB:
+// 12 Filme / 250 Showtimes). Grosszuegig dimensioniert, damit http_get die
+// Antwort nicht abschneidet -> sonst scheitert cJSON_Parse an unvollstaendigem
+// JSON und der Slide bleibt leer ("noch nicht geladen"). Puffer liegt im PSRAM.
+#define PARSE_BUF  (192 * 1024)
 
 typedef struct {
     char title[80];
@@ -89,6 +93,9 @@ static bool fetch_and_parse(void)
 
     int n = http_get(url, buf, PARSE_BUF);
     if (n <= 0) { free(buf); ESP_LOGW(TAG, "Abruf fehlgeschlagen"); return false; }
+    if (n >= (int)PARSE_BUF - 1) {   // Puffer randvoll -> Antwort evtl. abgeschnitten
+        ESP_LOGW(TAG, "Antwort >= %d B - PARSE_BUF vergroessern (JSON evtl. unvollstaendig)", (int)PARSE_BUF);
+    }
 
     cJSON *root = cJSON_Parse(buf);
     free(buf);
