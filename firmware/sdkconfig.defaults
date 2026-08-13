@@ -18,6 +18,14 @@ CONFIG_SPIRAM_USE_MALLOC=y
 # knappe interne RAM (WiFi/LVGL/httpd) frei bleibt.
 CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
 
+# WiFi-/LWIP-Puffer ins PSRAM verlagern. Ohne dies liegen alle statischen und
+# dynamischen WiFi-RX/TX-Puffer (10x1600 static RX, bis 32 dyn RX/TX, AMPDU-BA)
+# im INTERNEN RAM -> ~40-50 KB. Gemessen waren nur 14 KB intern frei (Tiefpunkt
+# 4 KB, groesster Block 7 KB) -> genau deshalb schlug die HW-AES-DMA fehl und
+# jede Lastspitze war absturzgefaehrdet. Auf dem S3 mit 8 MB PSRAM ist die
+# Verlagerung der Standardweg; gibt den internen RAM fuer TLS-Handshake/httpd frei.
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+
 # --- CPU 240 MHz ---
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
 
