@@ -52,6 +52,17 @@ CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=y
 # reichlich Platz. Empfohlener Weg fuer TLS auf PSRAM-Boards.
 CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
 
+# HW-AES ABSCHALTEN (-> Software-AES). Zusammen mit EXTERNAL_MEM_ALLOC liegen die
+# TLS-Puffer im PSRAM; die HW-AES-Engine kann aber per DMA NICHT direkt auf PSRAM
+# zugreifen und muss pro Record einen INTERNEN Bounce-Puffer allozieren. Bei
+# knappem internen RAM (WiFi/LVGL/httpd) schlaegt das fehl:
+#   E esp-aes: Failed to allocate memory
+#   E esp-tls-mbedtls: read error :-0x0084
+# -> abgebrochene HTTPS-Abrufe (Kino, OWM-Vorhersage). Software-AES arbeitet
+# direkt auf den PSRAM-Puffern ohne interne DMA-Allokation; auf dem S3@240 MHz
+# ist der CPU-Mehraufwand fuer die periodischen kleinen JSON-Abrufe vernachlaessigbar.
+CONFIG_MBEDTLS_HARDWARE_AES=n
+
 # --- OTA: Bootloader-Rollback (frisch geflashte App bleibt "pending", bis sie
 # per esp_ota_mark_app_valid_cancel_rollback() bestaetigt wird; sonst faellt der
 # Bootloader beim naechsten Neustart auf die vorige App zurueck) ---

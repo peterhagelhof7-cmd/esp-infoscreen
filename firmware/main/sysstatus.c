@@ -15,9 +15,14 @@ void sysstatus_text(char *buf, size_t len)
     int mm   = (int)((secs % 3600) / 60);
     int ss   = (int)(secs % 60);
 
-    size_t free_int = esp_get_free_heap_size();
-    size_t min_int  = esp_get_minimum_free_heap_size();
-    size_t free_ps  = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    // Interner RAM ist der Engpass (TLS/AES-DMA, WiFi, LVGL, Stacks). Der fruehere
+    // esp_get_free_heap_size() lieferte den Gesamtwert INKL. PSRAM (~7 MB) und
+    // verdeckte den Mangel. Deshalb explizit MALLOC_CAP_INTERNAL: frei, Minimum
+    // seit Boot und groesster zusammenhaengender Block (DMA/TLS brauchen contig.).
+    size_t free_int  = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    size_t min_int   = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
+    size_t big_int   = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
+    size_t free_ps   = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
 
     const esp_app_desc_t *app = esp_app_get_description();
 
@@ -32,12 +37,12 @@ void sysstatus_text(char *buf, size_t len)
     snprintf(buf, len,
         "Firmware: %s\n"
         "Uptime: %dT %02d:%02d:%02d\n"
-        "Heap frei: %u KB (min %u KB)\n"
+        "RAM intern: %u KB frei (min %u, Block %u)\n"
         "PSRAM frei: %u KB\n"
         "%s",
         app ? app->version : "?",
         days, hh, mm, ss,
-        (unsigned)(free_int / 1024), (unsigned)(min_int / 1024),
+        (unsigned)(free_int / 1024), (unsigned)(min_int / 1024), (unsigned)(big_int / 1024),
         (unsigned)(free_ps / 1024),
         netline);
 }
