@@ -9,6 +9,7 @@
 #include "esp_http_client.h"
 #include "esp_netif.h"
 #include "esp_log.h"
+#include "esp_attr.h"   // EXT_RAM_BSS_ATTR
 
 static const char *TAG = "fritzbox";
 #define POLL_INTERVAL_MS 10000
@@ -101,7 +102,7 @@ static void poll_once(void)
 
     fritzbox_data_t d = { 0 };
     if (host[0] != '\0') {
-        static char resp[2560];
+        static EXT_RAM_BSS_ATTR char resp[2560];   // Parse-Puffer ins PSRAM (spart internen RAM)
         char val[64];
 
         if (soap_call(host, "/igdupnp/control/WANIPConn1",

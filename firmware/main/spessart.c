@@ -8,6 +8,7 @@
 #include "freertos/task.h"
 #include "freertos/semphr.h"
 #include "esp_log.h"
+#include "esp_attr.h"   // EXT_RAM_BSS_ATTR
 
 static const char *TAG = "spessart";
 #define SPESSART_URL "https://www.spessartwetter.de/webimg/custom.html"
@@ -41,7 +42,7 @@ static bool number_before(const char *html, const char *marker, char *out, size_
 
 static void poll_once(void)
 {
-    static char buf[20000];
+    static EXT_RAM_BSS_ATTR char buf[20000];   // Parse-Puffer ins PSRAM (spart internen RAM)
     spessart_data_t d = { 0 };
 
     int n = http_get(SPESSART_URL, buf, sizeof(buf));

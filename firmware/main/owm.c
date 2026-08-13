@@ -12,6 +12,7 @@
 #include "cJSON.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_attr.h"   // EXT_RAM_BSS_ATTR
 
 static const char *TAG = "owm";
 #define CUR_URL "https://api.openweathermap.org/data/2.5/weather?%s&units=metric&lang=de&appid=%s"
@@ -84,7 +85,7 @@ static void poll_current(void)
 
     char loc[96]; loc_part(loc, sizeof(loc));
     char url[320]; snprintf(url, sizeof(url), CUR_URL, loc, key);
-    static char buf[4096];
+    static EXT_RAM_BSS_ATTR char buf[4096];   // Parse-Puffer ins PSRAM (spart internen RAM)
     bool valid = false;
     char desc[48] = { 0 }, icon[4] = { 0 };
     int temp = 0, feels = 0, hum = 0, wind = 0;

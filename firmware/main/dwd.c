@@ -7,6 +7,7 @@
 #include "freertos/semphr.h"
 #include "cJSON.h"
 #include "esp_log.h"
+#include "esp_attr.h"   // EXT_RAM_BSS_ATTR
 
 static const char *TAG = "dwd";
 // Bright Sky (DWD) Warnungen fuer Johannesberg (lat/lon)
@@ -18,7 +19,7 @@ static SemaphoreHandle_t s_lock;
 
 static void poll_once(void)
 {
-    static char buf[8192];
+    static EXT_RAM_BSS_ATTR char buf[8192];   // Parse-Puffer ins PSRAM (spart internen RAM)
     dwd_data_t d = { 0 };
 
     int n = http_get(DWD_URL, buf, sizeof(buf));
