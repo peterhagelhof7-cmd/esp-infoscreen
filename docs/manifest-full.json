@@ -1,6 +1,6 @@
 {
   "name": "esp-infoscreen",
-  "version": "1.2.0",
+  "version": "1.2.4",
   "new_install_prompt_erase": true,
   "builds": [
     {
