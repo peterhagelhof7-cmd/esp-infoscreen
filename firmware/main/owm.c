@@ -1,6 +1,7 @@
 #include "owm.h"
 #include "http_util.h"
 #include "config_store.h"
+#include "time_sync.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -21,6 +22,10 @@ static const char *TAG = "owm";
 
 static owm_data_t s_data;
 static SemaphoreHandle_t s_lock;
+// Serialisiert poll_current()/poll_forecast(): der Hintergrund-Poller und ein
+// manueller owm_refresh() duerfen nicht gleichzeitig laufen (poll_current nutzt
+// einen static-Puffer, und doppelte Abrufe waeren Verschwendung).
+static SemaphoreHandle_t s_poll_gate;
 
 static const char *WD[] = { "Sonntag", "Montag", "Dienstag", "Mittwoch",
                             "Donnerstag", "Freitag", "Samstag" };
@@ -128,10 +133,11 @@ static void poll_current(void)
 }
 
 // --- Vorhersage (morgen / uebermorgen / Tag danach) ------------------------
-static void poll_forecast(void)
+// Gibt true zurueck, wenn mindestens ein Tag erfolgreich geparst wurde.
+static bool poll_forecast(void)
 {
     char key[40];
-    if (!get_key(key, sizeof(key))) return;
+    if (!get_key(key, sizeof(key))) return false;
 
     char loc[96]; loc_part(loc, sizeof(loc));
     char url[320]; snprintf(url, sizeof(url), FC_URL, loc, key);
@@ -142,16 +148,16 @@ static void poll_forecast(void)
     #define FC_BUF (96 * 1024)
     char *buf = heap_caps_malloc(FC_BUF, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!buf) buf = malloc(FC_BUF);
-    if (!buf) return;
+    if (!buf) return false;
 
     int n = http_get(url, buf, FC_BUF);
-    if (n <= 0) { free(buf); ESP_LOGW(TAG, "Vorhersage: Abruf fehlgeschlagen"); return; }
+    if (n <= 0) { free(buf); ESP_LOGW(TAG, "Vorhersage: Abruf fehlgeschlagen"); return false; }
     if (n >= FC_BUF - 1) ESP_LOGW(TAG, "Vorhersage: Antwort >= %d B - Puffer evtl. zu klein", FC_BUF);
 
     cJSON *root = cJSON_Parse(buf);
     free(buf);
     cJSON *list = root ? cJSON_GetObjectItem(root, "list") : NULL;
-    if (!cJSON_IsArray(list)) { cJSON_Delete(root); return; }
+    if (!cJSON_IsArray(list)) { cJSON_Delete(root); return false; }
 
     owm_fc_day_t fc[3];
     char dates[3][11];
@@ -197,22 +203,33 @@ static void poll_forecast(void)
     }
     cJSON_Delete(root);
 
+    bool ok = fc[0].valid || fc[1].valid || fc[2].valid;
     xSemaphoreTake(s_lock, portMAX_DELAY);
-    s_data.fc_valid = fc[0].valid || fc[1].valid || fc[2].valid;
+    s_data.fc_valid = ok;
     memcpy(s_data.fc, fc, sizeof(fc));
     xSemaphoreGive(s_lock);
     ESP_LOGI(TAG, "Vorhersage aktualisiert (%d Tage)", fc[0].valid + fc[1].valid + fc[2].valid);
+    return ok;
 }
 
 static void poll_task(void *arg)
 {
     (void)arg;
     vTaskDelay(pdMS_TO_TICKS(5000));
-    int i = 0;
+    int  since_fc = 0;      // Runden seit letztem Vorhersage-Abruf
+    bool fc_ok = false;     // erste erfolgreiche Vorhersage schon geholt?
     for (;;) {
+        xSemaphoreTake(s_poll_gate, portMAX_DELAY);
         poll_current();
-        if (i % FC_EVERY_N_POLLS == 0) poll_forecast();
-        i++;
+        // Vorhersage erst, wenn die Uhr per NTP steht (sonst matchen die
+        // Datums-Strings keinen Listeneintrag). Bis zum ersten Erfolg jede
+        // Runde (20 min) erneut versuchen, danach nur noch alle ~3 h.
+        if (time_sync_is_valid() && (!fc_ok || since_fc >= FC_EVERY_N_POLLS)) {
+            fc_ok = poll_forecast();
+            since_fc = 0;
+        }
+        xSemaphoreGive(s_poll_gate);
+        since_fc++;
         vTaskDelay(pdMS_TO_TICKS(POLL_INTERVAL_MS));
     }
 }
@@ -220,8 +237,18 @@ static void poll_task(void *arg)
 void owm_init(void)
 {
     s_lock = xSemaphoreCreateMutex();
+    s_poll_gate = xSemaphoreCreateMutex();
     memset(&s_data, 0, sizeof(s_data));
     xTaskCreate(poll_task, "owm", 7168, NULL, 3, NULL);
+}
+
+void owm_refresh(void)
+{
+    if (!s_poll_gate) return;
+    xSemaphoreTake(s_poll_gate, portMAX_DELAY);
+    poll_current();
+    if (time_sync_is_valid()) poll_forecast();
+    xSemaphoreGive(s_poll_gate);
 }
 
 void owm_get(owm_data_t *out)

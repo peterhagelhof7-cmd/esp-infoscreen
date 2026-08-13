@@ -283,6 +283,7 @@ static void build_innen(char *out, size_t len)
 // enc[1024]-Limit), wird sie geteilt -> im Zweifel je Tag eine Nachricht.
 static void cmd_vorhersage(void)
 {
+    owm_refresh();   // vor der Antwort frisch abfragen (aktuell + Vorhersage)
     owm_data_t d; owm_get(&d);
     if (!d.has_key) {
         telegram_send("\xF0\x9F\x8C\xA4 Vorhersage: kein OpenWeatherMap-Key konfiguriert.");

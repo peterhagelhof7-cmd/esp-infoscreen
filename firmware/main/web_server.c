@@ -9,6 +9,7 @@
 #include "muell.h"
 #include "nina.h"
 #include "sysstatus.h"
+#include "owm.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -287,6 +288,8 @@ static esp_err_t settings_get(httpd_req_t *req)
         "<label>Standort (leer = Johannesberg)</label>"
         "<input type=text name=loc value=\"%s\" placeholder='z.B. Aschaffenburg,DE'>"
         "<button type=submit>Speichern</button></form>"
+        "<form method=post action=/owm/refresh style='margin-top:8px'>"
+        "<button type=submit>Wetter jetzt abrufen</button></form>"
         "<div class=st>Kostenloser Key von openweathermap.org. %s</div></div>",
         has_key ? "gesetzt - zum \xc3\x84ndern neuen Key eingeben" : "noch nicht gesetzt",
         owmloc_esc,
@@ -444,6 +447,15 @@ static esp_err_t owm_post(httpd_req_t *req)
     }
     form_field(body, "loc", loc, sizeof(loc));
     config_set_str("owm_loc", loc);       // leer = Standort Johannesberg
+    return redirect_settings(req);
+}
+
+// Manueller Sofort-Abruf (aktuelle Werte + Vorhersage). Blockiert den httpd-Task
+// fuer die Dauer der Abfrage (wenige Sekunden), danach zeigt /settings frische
+// Daten. owm_refresh() serialisiert mit dem Hintergrund-Poller.
+static esp_err_t owm_refresh_post(httpd_req_t *req)
+{
+    owm_refresh();
     return redirect_settings(req);
 }
 
@@ -816,6 +828,7 @@ void web_server_start(void)
     httpd_uri_t tadd = { .uri = "/tadd", .method = HTTP_POST, .handler = tadd_post };
     httpd_uri_t tdel = { .uri = "/tdel", .method = HTTP_POST, .handler = tdel_post };
     httpd_uri_t owm  = { .uri = "/owm", .method = HTTP_POST, .handler = owm_post };
+    httpd_uri_t owr  = { .uri = "/owm/refresh", .method = HTTP_POST, .handler = owm_refresh_post };
     httpd_uri_t dev  = { .uri = "/device", .method = HTTP_POST, .handler = device_post };
     httpd_uri_t brg  = { .uri = "/brightness", .method = HTTP_POST, .handler = brightness_post };
     httpd_uri_t sld  = { .uri = "/slides", .method = HTTP_POST, .handler = slides_post };
@@ -837,6 +850,7 @@ void web_server_start(void)
     httpd_register_uri_handler(server, &tadd);
     httpd_register_uri_handler(server, &tdel);
     httpd_register_uri_handler(server, &owm);
+    httpd_register_uri_handler(server, &owr);
     httpd_register_uri_handler(server, &dev);
     httpd_register_uri_handler(server, &brg);
     httpd_register_uri_handler(server, &sld);

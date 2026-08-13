@@ -31,3 +31,8 @@ void owm_init(void);
 
 // Threadsichere Kopie der zuletzt abgefragten Werte.
 void owm_get(owm_data_t *out);
+
+// Sofortiger Abruf (aktuelle Werte + Vorhersage) im aufrufenden Task, blockiert
+// bis fertig. Fuer den "jetzt aktualisieren"-Button im Web und das Telegram-
+// Kommando "vorhersage". Serialisiert mit dem Hintergrund-Poller.
+void owm_refresh(void);
