@@ -237,6 +237,46 @@ static void send_greeting(void)
     telegram_send(msg);
 }
 
+// Tage von heute (12:00) bis zum Datum (YYYY-MM-DD, 12:00). -1 bei Parse-Fehler.
+static int days_until(const char *date)
+{
+    int y = 0, m = 0, d = 0;
+    if (sscanf(date, "%d-%d-%d", &y, &m, &d) != 3) return -1;
+    struct tm t; memset(&t, 0, sizeof(t));
+    t.tm_year = y - 1900; t.tm_mon = m - 1; t.tm_mday = d; t.tm_hour = 12; t.tm_isdst = -1;
+    time_t target = mktime(&t);
+    time_t now = time(NULL); struct tm nt; localtime_r(&now, &nt);
+    nt.tm_hour = 12; nt.tm_min = 0; nt.tm_sec = 0; nt.tm_isdst = -1;
+    time_t base = mktime(&nt);
+    return (int)((target - base) / 86400);
+}
+
+// Kompakte Zeile zum naechsten Feiertag des Bundeslandes -> out. false, wenn
+// kein Bundesland gewaehlt oder kein kommender Feiertag.
+static bool next_feiertag_line(char *out, size_t len)
+{
+    static EXT_RAM_BSS_ATTR feiertag_t fe[40];
+    int fn = feiertage_get(fe, 40);
+    if (fn == 0) return false;
+    char today[16] = { 0 };
+    time_t now = time(NULL); struct tm tm; localtime_r(&now, &tm);
+    if (tm.tm_year > 120) strftime(today, sizeof(today), "%Y-%m-%d", &tm);
+    int best = -1;
+    for (int i = 0; i < fn; i++) {
+        if (today[0] && strcmp(fe[i].date, today) < 0) continue;
+        if (best < 0 || strcmp(fe[i].date, fe[best].date) < 0) best = i;
+    }
+    if (best < 0) return false;
+    int yy = 0, mm = 0, dd = 0; sscanf(fe[best].date, "%d-%d-%d", &yy, &mm, &dd);
+    int du = days_until(fe[best].date);
+    char when[20];
+    if (du == 0)      snprintf(when, sizeof(when), "heute");
+    else if (du == 1) snprintf(when, sizeof(when), "morgen");
+    else              snprintf(when, sizeof(when), "in %d Tagen", du);
+    snprintf(out, len, "🎉 Nächster Feiertag: %02d.%02d. %s (%s)", dd, mm, fe[best].name, when);
+    return true;
+}
+
 // --- Taegliche Morgen-Zusammenfassung (Wetter + Termine) --------------------
 // Zwei Nachrichten (Wetter, dann Termine), damit keine die urlencode-Grenze
 // von telegram_send sprengt.
@@ -259,6 +299,9 @@ static void send_daily_summary(void)
         char w[160]; build_weather(w, sizeof(w));   // Spessart-Fallback ohne OWM-Key
         o += snprintf(msg + o, sizeof(msg) - o, "\n%s", w);
     }
+    char fl[80];
+    if (next_feiertag_line(fl, sizeof(fl)))
+        o += snprintf(msg + o, sizeof(msg) - o, "\n%s", fl);
     telegram_send(msg);
 
     char t[240]; build_termine(t, sizeof(t));   // naechste Termine + Muellabfuhr
@@ -414,6 +457,41 @@ static void cmd_planes(void)
     telegram_send(msg);
 }
 
+// "feiertag": die naechsten Feiertage des gewaehlten Bundeslandes.
+static void cmd_feiertag(void)
+{
+    static EXT_RAM_BSS_ATTR feiertag_t fe[40];
+    int fn = feiertage_get(fe, 40);
+    if (fn == 0) {
+        telegram_send("🎉 Keine Feiertage – Bundesland in den Einstellungen wählen.");
+        return;
+    }
+    char today[16] = { 0 };
+    time_t now = time(NULL); struct tm tm; localtime_r(&now, &tm);
+    if (tm.tm_year > 120) strftime(today, sizeof(today), "%Y-%m-%d", &tm);
+
+    for (int i = 0; i < fn; i++)       // nach Datum sortieren
+        for (int j = i + 1; j < fn; j++)
+            if (strcmp(fe[j].date, fe[i].date) < 0) { feiertag_t t = fe[i]; fe[i] = fe[j]; fe[j] = t; }
+
+    char msg[400];
+    size_t o = snprintf(msg, sizeof(msg), "🎉 Nächste Feiertage:");
+    int shown = 0;
+    for (int i = 0; i < fn && shown < 3; i++) {
+        if (today[0] && strcmp(fe[i].date, today) < 0) continue;   // Vergangenes weg
+        int yy = 0, mm = 0, dd = 0; sscanf(fe[i].date, "%d-%d-%d", &yy, &mm, &dd);
+        int du = days_until(fe[i].date);
+        char when[20];
+        if (du == 0)      snprintf(when, sizeof(when), "heute");
+        else if (du == 1) snprintf(when, sizeof(when), "morgen");
+        else              snprintf(when, sizeof(when), "in %d Tagen", du);
+        o += snprintf(msg + o, sizeof(msg) - o, "\n%02d.%02d. %s (%s)", dd, mm, fe[i].name, when);
+        shown++;
+    }
+    if (shown == 0) snprintf(msg, sizeof(msg), "🎉 Keine kommenden Feiertage.");
+    telegram_send(msg);
+}
+
 // Kommandoliste ausgeben.
 static void send_help(void)
 {
@@ -423,6 +501,7 @@ static void send_help(void)
         "\xE2\x80\xA2 Wetter \xE2\x80\x93 aktuelle Spessartwetter-Werte\n"
         "\xE2\x80\xA2 vorhersage \xE2\x80\x93 Wettervorhersage (OWM)\n"
         "\xE2\x80\xA2 planes \xE2\x80\x93 Flugzeuge in der N\xC3\xA4he\n"
+        "\xE2\x80\xA2 feiertag \xE2\x80\x93 n\xC3\xA4""chste Feiertage\n"
         "\xE2\x80\xA2 innen \xE2\x80\x93 Innenraum-Temperatur/-Feuchte (DHT22)\n"
         "\xE2\x80\xA2 internet \xE2\x80\x93 Internet-/Fritzbox-Daten\n"
         "\xE2\x80\xA2 termin \xE2\x80\x93 die n\xC3\xA4""chsten 2 Termine\n"
@@ -474,6 +553,12 @@ static void handle_command(const char *text)
     // Flugzeuge: eigenstaendig (frischer Abruf, dann Liste).
     if (contains_ci(low, "planes")) {
         cmd_planes();
+        return;
+    }
+
+    // Feiertage: eigenstaendig (die naechsten Feiertage des Bundeslandes).
+    if (contains_ci(low, "feiertag")) {
+        cmd_feiertag();
         return;
     }
 
