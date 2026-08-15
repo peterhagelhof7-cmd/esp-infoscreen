@@ -492,6 +492,41 @@ static void cmd_feiertag(void)
     telegram_send(msg);
 }
 
+// "alarm": alle aktiven Warnungen (DWD-Wetter, NINA/BBK, Windboeen) auflisten.
+// Nutzt die zwischengespeicherten Poller-Daten (kein eigener Abruf).
+static void cmd_alarm(void)
+{
+    static EXT_RAM_BSS_ATTR char msg[500];
+    size_t o = snprintf(msg, sizeof(msg), "🚨 Aktive Warnungen:");
+    int any = 0;
+
+    dwd_data_t d; dwd_get(&d);
+    if (d.valid && d.count > 0 && d.headline[0]) {
+        o += snprintf(msg + o, sizeof(msg) - o, "\n⚠ DWD (%s): %s",
+                      d.severity[0] ? d.severity : "?", d.headline);
+        if (d.count > 1) o += snprintf(msg + o, sizeof(msg) - o, " (+%d weitere)", d.count - 1);
+        any++;
+    }
+
+    nina_data_t n; nina_get(&n);
+    if (n.valid && n.count > 0 && n.headline[0]) {
+        o += snprintf(msg + o, sizeof(msg) - o, "\n🚨 %s (%s): %s",
+                      n.provider[0] ? n.provider : "BBK", n.severity[0] ? n.severity : "?", n.headline);
+        if (n.count > 1) o += snprintf(msg + o, sizeof(msg) - o, " (+%d weitere)", n.count - 1);
+        any++;
+    }
+
+    spessart_data_t s; spessart_get(&s);
+    if (s.valid && spessart_gust_kmh(&s) >= BOE_WARN_KMH) {
+        o += snprintf(msg + o, sizeof(msg) - o, "\n💨 Windböen: %s km/h (spessartwetter)",
+                      s.gust[0] ? s.gust : "?");
+        any++;
+    }
+
+    if (!any) snprintf(msg, sizeof(msg), "✅ Keine aktiven Warnungen.");
+    telegram_send(msg);
+}
+
 // Kommandoliste ausgeben.
 static void send_help(void)
 {
@@ -507,6 +542,7 @@ static void send_help(void)
         "\xE2\x80\xA2 termin \xE2\x80\x93 die n\xC3\xA4""chsten 2 Termine\n"
         "\xE2\x80\xA2 status \xE2\x80\x93 Uptime / Heap / WLAN\n"
         "\xE2\x80\xA2 stacks \xE2\x80\x93 Stack-Reserve je Task (Diagnose)\n"
+        "\xE2\x80\xA2 alarm \xE2\x80\x93 aktive Warnungen (DWD/NINA/B\xC3\xB6""en)\n"
         "\xE2\x80\xA2 kino \xE2\x80\x93 aktuelles Kinoprogramm\n"
         "\xE2\x80\xA2 kino preview \xE2\x80\x93 Programm ab n\xC3\xA4""chster Woche\n"
         "\xE2\x80\xA2 neu termin JJJJ-MM-TT Text \xE2\x80\x93 Termin anlegen",
@@ -568,6 +604,12 @@ static void handle_command(const char *text)
         static EXT_RAM_BSS_ATTR char sb[900];
         sysstatus_stacks(sb, sizeof(sb));
         telegram_send(sb);
+        return;
+    }
+
+    // Aktive Warnungen (DWD / NINA / Boeen) zusammengefasst.
+    if (contains_ci(low, "alarm")) {
+        cmd_alarm();
         return;
     }
 
