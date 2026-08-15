@@ -343,7 +343,7 @@ static void planes_build(lv_obj_t *p)
         // Links: Callsign + Route (Font hat kein →/·, daher ">"). Breite gedeckelt
         // mit "..."-Kuerzung, damit die Zeile NIE in die rechte Spalte laeuft.
         const char *cs = a->flight[0] ? a->flight : (a->reg[0] ? a->reg : "?");
-        char left[64];
+        char left[72];   // cs(9) + "  " + from(27) + ">" + to(27) + NUL
         if (a->from[0] || a->to[0])
             snprintf(left, sizeof(left), "%s  %s>%s", cs, a->from[0] ? a->from : "?", a->to[0] ? a->to : "?");
         else
