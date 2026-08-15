@@ -303,7 +303,8 @@ static const char *compass(int track)
 
 static void planes_build(lv_obj_t *p)
 {
-    planes_data_t d; planes_get(&d);
+    // static (nur LVGL-Task) + PSRAM: planes_data_t ist ~840 B -> Stack schonen.
+    static EXT_RAM_BSS_ATTR planes_data_t d; planes_get(&d);
 
     // Kein ✈-Emoji: nicht im Font (würde als Kästchen erscheinen).
     lv_obj_t *hdr = lv_label_create(p);

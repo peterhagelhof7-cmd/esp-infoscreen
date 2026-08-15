@@ -283,9 +283,9 @@ static bool next_feiertag_line(char *out, size_t len)
 static void send_daily_summary(void)
 {
     owm_refresh();   // aktuelle Werte + Vorhersage (inkl. "heute") frisch holen
-    owm_data_t d; owm_get(&d);
+    static EXT_RAM_BSS_ATTR owm_data_t d; owm_get(&d);   // static/PSRAM: Stack frei
 
-    char msg[400];
+    static EXT_RAM_BSS_ATTR char msg[400];
     size_t o = snprintf(msg, sizeof(msg), "☀️ Guten Morgen! Deine Tagesübersicht");
     if (d.has_key && d.valid) {
         o += snprintf(msg + o, sizeof(msg) - o,
@@ -386,7 +386,7 @@ static void build_innen(char *out, size_t len)
 static void cmd_vorhersage(void)
 {
     owm_refresh();   // vor der Antwort frisch abfragen (aktuell + Vorhersage)
-    owm_data_t d; owm_get(&d);
+    static EXT_RAM_BSS_ATTR owm_data_t d; owm_get(&d);   // static/PSRAM: Stack frei
     if (!d.has_key) {
         telegram_send("\xF0\x9F\x8C\xA4 Vorhersage: kein OpenWeatherMap-Key konfiguriert.");
         return;
@@ -396,7 +396,7 @@ static void cmd_vorhersage(void)
         return;
     }
 
-    char msg[400];
+    static EXT_RAM_BSS_ATTR char msg[400];
     size_t o = snprintf(msg, sizeof(msg), "\xF0\x9F\x8C\xA4 Wettervorhersage Johannesberg");
     if (d.valid)
         o += snprintf(msg + o, sizeof(msg) - o,
@@ -425,7 +425,10 @@ static void cmd_vorhersage(void)
 static void cmd_planes(void)
 {
     planes_refresh();
-    planes_data_t d; planes_get(&d);
+    // static (nur Telegram-Task, nicht reentrant) + PSRAM: haelt den Task-Stack
+    // frei. planes_data_t ist ~840 B; zusammen mit dem TLS-Handshake in
+    // planes_refresh() sonst Stack-Overflow.
+    static EXT_RAM_BSS_ATTR planes_data_t d; planes_get(&d);
     if (!d.valid) {
         telegram_send("✈ Flugzeuge: Abruf fehlgeschlagen.");
         return;
@@ -435,7 +438,7 @@ static void cmd_planes(void)
         return;
     }
 
-    char msg[600];
+    static EXT_RAM_BSS_ATTR char msg[600];
     size_t o = snprintf(msg, sizeof(msg), "✈ Flugzeuge in der Nähe (%d)", d.count);
     int rows = d.count < 6 ? d.count : 6;
     for (int i = 0; i < rows; i++) {
@@ -471,7 +474,7 @@ static void cmd_feiertag(void)
         for (int j = i + 1; j < fn; j++)
             if (strcmp(fe[j].date, fe[i].date) < 0) { feiertag_t t = fe[i]; fe[i] = fe[j]; fe[j] = t; }
 
-    char msg[400];
+    static EXT_RAM_BSS_ATTR char msg[400];
     size_t o = snprintf(msg, sizeof(msg), "🎉 Nächste Feiertage:");
     int shown = 0;
     for (int i = 0; i < fn && shown < 3; i++) {
@@ -516,7 +519,7 @@ static void send_help(void)
 static void handle_command(const char *text)
 {
     if (s_botname[0] == '\0') return;
-    char low[256];
+    static char low[256];   // static: nur Telegram-Task -> haelt Stack frei
     snprintf(low, sizeof(low), "%s", text);
     tolower_str(low);
 
@@ -568,7 +571,7 @@ static void handle_command(const char *text)
         return;
     }
 
-    char reply[560]; bool any = false;
+    static EXT_RAM_BSS_ATTR char reply[560]; bool any = false;   // PSRAM, static
     reply[0] = '\0'; size_t o = 0;
     if (contains_ci(low, "wetter")) {
         char b[160]; build_weather(b, sizeof(b));
