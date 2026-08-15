@@ -7,7 +7,9 @@
 // API-Key/Anmeldung. Gleiches v2-Format wie airplanes.live (das den offenen
 // Zugang inzwischen gesperrt hat). Der Standort (Breite/Laenge) und der Radius
 // (in nautischen Meilen, max. 250) sind ueber das Webinterface einstellbar
-// (Config planes_lat/lon/radius).
+// (Config planes_lat/lon/radius). Die Route (Start->Ziel) liefert ADS-B NICHT
+// mit; sie wird pro Callsign von adsbdb.com nachgeschlagen (frei, ohne Key) und
+// zwischengespeichert.
 
 #define PLANES_MAX 8   // so viele naechste Flugzeuge werden vorgehalten
 
@@ -19,6 +21,8 @@ typedef struct {
     int    gs_kt;       // Geschwindigkeit ueber Grund in Knoten (Feld "gs")
     int    track;       // Kurs ueber Grund in Grad (Feld "track"); -1 unbekannt
     double dst_nm;      // Entfernung vom Standort in nautischen Meilen
+    char   from[5];     // Start-Flughafen (IATA) via adsbdb; leer = unbekannt
+    char   to[5];       // Ziel-Flughafen (IATA)
 } plane_t;
 
 typedef struct {

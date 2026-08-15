@@ -375,16 +375,16 @@ static void cmd_planes(void)
     planes_refresh();
     planes_data_t d; planes_get(&d);
     if (!d.valid) {
-        telegram_send("\xE2\x9C\x88 Flugzeuge: Abruf fehlgeschlagen.");
+        telegram_send("✈ Flugzeuge: Abruf fehlgeschlagen.");
         return;
     }
     if (d.count == 0) {
-        telegram_send("\xE2\x9C\x88 Zurzeit keine Flugzeuge in der N\xC3\xA4he.");
+        telegram_send("✈ Zurzeit keine Flugzeuge in der Nähe.");
         return;
     }
 
     char msg[600];
-    size_t o = snprintf(msg, sizeof(msg), "\xE2\x9C\x88 Flugzeuge in der N\xC3\xA4he (%d)", d.count);
+    size_t o = snprintf(msg, sizeof(msg), "✈ Flugzeuge in der Nähe (%d)", d.count);
     int rows = d.count < 6 ? d.count : 6;
     for (int i = 0; i < rows; i++) {
         const plane_t *a = &d.ac[i];
@@ -393,8 +393,11 @@ static void cmd_planes(void)
         if (a->alt_ft < 0)           snprintf(alt, sizeof(alt), "Boden");
         else if (a->alt_ft >= 18000) snprintf(alt, sizeof(alt), "FL%03d", a->alt_ft / 100);
         else                         snprintf(alt, sizeof(alt), "%dft", a->alt_ft);
-        o += snprintf(msg + o, sizeof(msg) - o, "\n%s%s%s  %s  %.0fnm",
-                      cs,
+        char route[20] = "";
+        if (a->from[0] || a->to[0])
+            snprintf(route, sizeof(route), " %s→%s", a->from[0] ? a->from : "?", a->to[0] ? a->to : "?");
+        o += snprintf(msg + o, sizeof(msg) - o, "\n%s%s%s%s  %s  %.0fnm",
+                      cs, route,
                       a->type[0] ? " " : "", a->type,
                       alt, a->dst_nm);
         if (o > sizeof(msg) - 80) break;

@@ -344,25 +344,36 @@ static void planes_build(lv_obj_t *p)
         lv_obj_set_style_pad_all(row, 8, 0);
         lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
 
-        // Callsign / Registrierung + Typ (links)
-        char id[24];
+        // Links: Callsign (oben) + Route bzw. Typ (unten).
+        // Hinweis: Font hat KEIN "\xE2\x86\x92"/"\xC2\xB7" -> auf dem Display ">" und Leerzeichen.
         const char *cs = a->flight[0] ? a->flight : (a->reg[0] ? a->reg : "?");
-        if (a->type[0]) snprintf(id, sizeof(id), "%s  %s", cs, a->type);
-        else            snprintf(id, sizeof(id), "%s", cs);
-        lv_obj_t *lid = lv_label_create(row);
-        lv_obj_set_style_text_font(lid, FONT_MED, 0);
-        lv_obj_set_style_text_color(lid, lv_color_hex(0xffffff), 0);
-        lv_label_set_text(lid, id);
-        lv_obj_align(lid, LV_ALIGN_LEFT_MID, 0, 0);
+        lv_obj_t *lcs = lv_label_create(row);
+        lv_obj_set_style_text_font(lcs, FONT_MED, 0);
+        lv_obj_set_style_text_color(lcs, lv_color_hex(0xffffff), 0);
+        lv_label_set_text(lcs, cs);
+        lv_obj_align(lcs, LV_ALIGN_TOP_LEFT, 0, 0);
 
-        // Hoehe, Entfernung, Kurs (rechts)
-        char alt[12]; alt_text(a->alt_ft, alt, sizeof(alt));
-        char info[64];
-        if (a->track >= 0)
-            snprintf(info, sizeof(info), "%s  \xC2\xB7  %.0f nm  \xC2\xB7  %d\xC2\xB0 %s",
-                     alt, a->dst_nm, a->track, compass(a->track));
+        char sub[32];
+        if (a->from[0] || a->to[0])
+            snprintf(sub, sizeof(sub), "%s > %s", a->from[0] ? a->from : "?", a->to[0] ? a->to : "?");
+        else if (a->type[0])
+            snprintf(sub, sizeof(sub), "%s", a->type);
         else
-            snprintf(info, sizeof(info), "%s  \xC2\xB7  %.0f nm", alt, a->dst_nm);
+            sub[0] = '\0';
+        lv_obj_t *lsub = lv_label_create(row);
+        lv_obj_set_style_text_font(lsub, FONT_SM, 0);
+        lv_obj_set_style_text_color(lsub, lv_color_hex(0x8ab4f8), 0);
+        lv_label_set_text(lsub, sub);
+        lv_obj_align(lsub, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+
+        // Rechts: Typ, Hoehe, Entfernung, Kurs (Leerzeichen als Trenner).
+        char alt[12]; alt_text(a->alt_ft, alt, sizeof(alt));
+        char info[72];
+        size_t io = 0;
+        if (a->type[0]) io += snprintf(info + io, sizeof(info) - io, "%s   ", a->type);
+        io += snprintf(info + io, sizeof(info) - io, "%s   %.0f nm", alt, a->dst_nm);
+        if (a->track >= 0)
+            io += snprintf(info + io, sizeof(info) - io, "   %d\xC2\xB0 %s", a->track, compass(a->track));
         lv_obj_t *li = lv_label_create(row);
         lv_obj_set_style_text_font(li, FONT_MED, 0);
         lv_obj_set_style_text_color(li, lv_color_hex(0xb0b8d0), 0);

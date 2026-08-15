@@ -65,7 +65,82 @@ static void insert_sorted(plane_t *arr, int *cnt, const plane_t *p)
     if (*cnt < PLANES_MAX) (*cnt)++;
 }
 
-static void poll_once(void)
+// --- Routen-Cache (Callsign -> Start/Ziel via adsbdb.com) -------------------
+// ADS-B liefert keine Route. adsbdb.com gibt pro Callsign Start-/Zielflughafen
+// (IATA). Callsign->Route ist tagesstabil -> zwischenspeichern, damit nicht
+// jeder Poll erneut abfragt. Zugriff nur aus poll_once() (unter s_poll_gate).
+#define ROUTE_URL   "https://api.adsbdb.com/v0/callsign/%s"
+#define ROUTE_CACHE 24
+
+typedef struct {
+    char cs[10];        // Callsign
+    char from[5];       // IATA Start (leer = keine Route bekannt)
+    char to[5];         // IATA Ziel
+    bool done;          // Lookup schon versucht?
+} route_cache_t;
+static route_cache_t s_routes[ROUTE_CACHE];
+static int s_route_next;   // Ring-Einfuegeposition
+
+static int route_find(const char *cs)
+{
+    for (int i = 0; i < ROUTE_CACHE; i++)
+        if (s_routes[i].done && strcmp(s_routes[i].cs, cs) == 0) return i;
+    return -1;
+}
+
+// Route fuer ein Callsign abrufen und im Cache ablegen (auch bei "keine Route"
+// -> done=true, damit dasselbe Callsign nicht bei jedem Poll neu abgefragt wird).
+static void route_fetch(const char *cs)
+{
+    char url[96]; snprintf(url, sizeof(url), ROUTE_URL, cs);
+    static EXT_RAM_BSS_ATTR char rbuf[4096];
+    int n = http_get(url, rbuf, sizeof(rbuf));
+
+    route_cache_t *slot = &s_routes[s_route_next % ROUTE_CACHE];
+    s_route_next++;
+    memset(slot, 0, sizeof(*slot));
+    snprintf(slot->cs, sizeof(slot->cs), "%s", cs);
+    slot->done = true;
+
+    if (n <= 0) return;
+    cJSON *root = cJSON_Parse(rbuf);
+    if (!root) return;
+    cJSON *resp = cJSON_GetObjectItem(root, "response");   // sonst String "unknown callsign"
+    if (cJSON_IsObject(resp)) {
+        cJSON *fr = cJSON_GetObjectItem(resp, "flightroute");
+        if (cJSON_IsObject(fr)) {
+            cJSON *o  = cJSON_GetObjectItem(fr, "origin");
+            cJSON *d  = cJSON_GetObjectItem(fr, "destination");
+            cJSON *oi = o ? cJSON_GetObjectItem(o, "iata_code") : NULL;
+            cJSON *di = d ? cJSON_GetObjectItem(d, "iata_code") : NULL;
+            if (cJSON_IsString(oi)) snprintf(slot->from, sizeof(slot->from), "%s", oi->valuestring);
+            if (cJSON_IsString(di)) snprintf(slot->to,   sizeof(slot->to),   "%s", di->valuestring);
+        }
+    }
+    cJSON_Delete(root);
+}
+
+// Route der Flugzeuge auffuellen (aus Cache; bis route_cap neue Lookups/Aufruf,
+// um TLS-Bursts zu begrenzen). Bereits gecachte kosten nichts.
+static void enrich_routes(plane_t *arr, int cnt, int route_cap)
+{
+    int fetched = 0;
+    for (int i = 0; i < cnt; i++) {
+        if (!arr[i].flight[0]) continue;
+        int ri = route_find(arr[i].flight);
+        if (ri < 0 && fetched < route_cap) {
+            route_fetch(arr[i].flight);
+            fetched++;
+            ri = route_find(arr[i].flight);
+        }
+        if (ri >= 0) {
+            snprintf(arr[i].from, sizeof(arr[i].from), "%s", s_routes[ri].from);
+            snprintf(arr[i].to,   sizeof(arr[i].to),   "%s", s_routes[ri].to);
+        }
+    }
+}
+
+static void poll_once(int route_cap)
 {
     char lat[16], lon[16], rad[8];
     cfg_loc(lat, sizeof(lat), lon, sizeof(lon), rad, sizeof(rad));
@@ -153,6 +228,8 @@ static void poll_once(void)
 
     cJSON_Delete(root);
 
+    enrich_routes(tmp, cnt, route_cap);   // Start/Ziel nachschlagen (gecacht)
+
     xSemaphoreTake(s_lock, portMAX_DELAY);
     s_data.valid = true;
     s_data.count = cnt;
@@ -167,7 +244,7 @@ static void poll_task(void *arg)
     vTaskDelay(pdMS_TO_TICKS(8000));   // etwas nach dem Boot starten
     for (;;) {
         xSemaphoreTake(s_poll_gate, portMAX_DELAY);
-        poll_once();
+        poll_once(3);   // Hintergrund: max. 3 neue Routen-Lookups/Poll (gg. TLS-Bursts)
         xSemaphoreGive(s_poll_gate);
         vTaskDelay(pdMS_TO_TICKS(POLL_INTERVAL_MS));
     }
@@ -185,7 +262,7 @@ void planes_refresh(void)
 {
     if (!s_poll_gate) return;
     xSemaphoreTake(s_poll_gate, portMAX_DELAY);
-    poll_once();
+    poll_once(PLANES_MAX);   // Bot-Abruf: alle gezeigten Flugzeuge mit Route
     xSemaphoreGive(s_poll_gate);
 }
 
