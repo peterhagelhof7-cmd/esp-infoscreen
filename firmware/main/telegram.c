@@ -11,6 +11,7 @@
 #include "sysstatus.h"
 #include "dht22.h"
 #include "owm.h"
+#include "planes.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -318,6 +319,40 @@ static void cmd_vorhersage(void)
     if (o > 0) telegram_send(msg);
 }
 
+// "planes": Flugzeuge in der Naehe (airplanes.live). Vor der Antwort frisch
+// abfragen, dann die bis zu 6 naechsten Maschinen auflisten.
+static void cmd_planes(void)
+{
+    planes_refresh();
+    planes_data_t d; planes_get(&d);
+    if (!d.valid) {
+        telegram_send("\xE2\x9C\x88 Flugzeuge: Abruf fehlgeschlagen.");
+        return;
+    }
+    if (d.count == 0) {
+        telegram_send("\xE2\x9C\x88 Zurzeit keine Flugzeuge in der N\xC3\xA4he.");
+        return;
+    }
+
+    char msg[600];
+    size_t o = snprintf(msg, sizeof(msg), "\xE2\x9C\x88 Flugzeuge in der N\xC3\xA4he (%d)", d.count);
+    int rows = d.count < 6 ? d.count : 6;
+    for (int i = 0; i < rows; i++) {
+        const plane_t *a = &d.ac[i];
+        const char *cs = a->flight[0] ? a->flight : (a->reg[0] ? a->reg : "?");
+        char alt[12];
+        if (a->alt_ft < 0)           snprintf(alt, sizeof(alt), "Boden");
+        else if (a->alt_ft >= 18000) snprintf(alt, sizeof(alt), "FL%03d", a->alt_ft / 100);
+        else                         snprintf(alt, sizeof(alt), "%dft", a->alt_ft);
+        o += snprintf(msg + o, sizeof(msg) - o, "\n%s%s%s  %s  %.0fnm",
+                      cs,
+                      a->type[0] ? " " : "", a->type,
+                      alt, a->dst_nm);
+        if (o > sizeof(msg) - 80) break;
+    }
+    telegram_send(msg);
+}
+
 // Kommandoliste ausgeben.
 static void send_help(void)
 {
@@ -326,6 +361,7 @@ static void send_help(void)
         "\xF0\x9F\xA4\x96 Kommandos (@%s ...):\n"
         "\xE2\x80\xA2 Wetter \xE2\x80\x93 aktuelle Spessartwetter-Werte\n"
         "\xE2\x80\xA2 vorhersage \xE2\x80\x93 Wettervorhersage (OWM)\n"
+        "\xE2\x80\xA2 planes \xE2\x80\x93 Flugzeuge in der N\xC3\xA4he\n"
         "\xE2\x80\xA2 innen \xE2\x80\x93 Innenraum-Temperatur/-Feuchte (DHT22)\n"
         "\xE2\x80\xA2 internet \xE2\x80\x93 Internet-/Fritzbox-Daten\n"
         "\xE2\x80\xA2 termin \xE2\x80\x93 die n\xC3\xA4""chsten 2 Termine\n"
@@ -371,6 +407,12 @@ static void handle_command(const char *text)
     // Vorhersage: eigenstaendig (sendet ggf. mehrere Nachrichten, je Tag eine).
     if (contains_ci(low, "vorhersage")) {
         cmd_vorhersage();
+        return;
+    }
+
+    // Flugzeuge: eigenstaendig (frischer Abruf, dann Liste).
+    if (contains_ci(low, "planes")) {
+        cmd_planes();
         return;
     }
 

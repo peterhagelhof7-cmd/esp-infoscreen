@@ -14,6 +14,7 @@
 #include "nina.h"
 #include "spessart.h"
 #include "owm.h"
+#include "planes.h"
 #include "telegram.h"
 #include "kino.h"
 #include "dht22.h"
@@ -73,6 +74,7 @@ void app_main(void)
     nina_init();       // BBK/NINA (Katastrophen-/Bevoelkerungsschutz)
     spessart_init();   // spessartwetter.de
     owm_init();        // OpenWeatherMap
+    planes_init();     // Flugzeuge in der Naehe (airplanes.live)
     termine_init();    // Auto-Aufraeumung vergangener Termine
     dht22_init();      // Innenraumsensor (P4, GPIO18)
 

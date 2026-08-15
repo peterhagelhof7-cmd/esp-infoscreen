@@ -10,6 +10,7 @@
 #include "spessart.h"
 #include "dht22.h"
 #include "owm.h"
+#include "planes.h"
 #include "telegram.h"
 #include "config_store.h"
 #include "fonts_de.h"
@@ -288,6 +289,89 @@ static void owm_build(lv_obj_t *p)
 }
 
 static const slide_t SLIDE_OWM = { "owm", "Wetter Johannesberg", owm_build, NULL };
+
+// ========================= Slide: Flugzeuge ==================================
+// Naechste Flugzeuge ueber dem Standort (airplanes.live). Kopfzeile + Liste der
+// bis zu 6 naechsten Maschinen: Callsign, Typ, Hoehe, Entfernung, Kurs.
+static void alt_text(int alt_ft, char *out, size_t len)
+{
+    if (alt_ft < 0)            snprintf(out, len, "Boden");
+    else if (alt_ft >= 18000)  snprintf(out, len, "FL%03d", alt_ft / 100);
+    else                       snprintf(out, len, "%d ft", alt_ft);
+}
+
+static const char *compass(int track)
+{
+    if (track < 0) return "";
+    static const char *DIR[] = { "N", "NO", "O", "SO", "S", "SW", "W", "NW" };
+    return DIR[((track + 22) / 45) % 8];
+}
+
+static void planes_build(lv_obj_t *p)
+{
+    planes_data_t d; planes_get(&d);
+
+    lv_obj_t *hdr = lv_label_create(p);
+    lv_obj_set_style_text_font(hdr, FONT_MED, 0);
+    lv_obj_set_style_text_color(hdr, lv_color_hex(0x8ab4f8), 0);
+    char htxt[48];
+    if (!d.valid)      snprintf(htxt, sizeof(htxt), "\xE2\x9C\x88 Flugzeuge \xE2\x80\x93 kein Abruf");
+    else               snprintf(htxt, sizeof(htxt), "\xE2\x9C\x88 Flugzeuge in der N\xC3\xA4he: %d", d.count);
+    lv_label_set_text(hdr, htxt);
+    lv_obj_align(hdr, LV_ALIGN_TOP_LEFT, 24, 12);
+
+    if (!d.valid || d.count == 0) {
+        lv_obj_t *l = lv_label_create(p);
+        lv_obj_set_style_text_font(l, FONT_MED, 0);
+        lv_obj_set_style_text_color(l, lv_color_hex(0xb0b8d0), 0);
+        lv_label_set_text(l, d.valid ? "Zurzeit keine Flugzeuge in der N\xC3\xA4he"
+                                     : "Daten noch nicht verf\xC3\xBcgbar");
+        lv_obj_center(l);
+        return;
+    }
+
+    int rows = d.count < 6 ? d.count : 6;   // bis zu 6 Zeilen zeigen
+    for (int i = 0; i < rows; i++) {
+        const plane_t *a = &d.ac[i];
+        lv_obj_t *row = lv_obj_create(p);
+        lv_obj_set_size(row, 752, 56);
+        lv_obj_align(row, LV_ALIGN_TOP_MID, 0, 70 + i * 64);
+        lv_obj_set_style_bg_color(row, lv_color_hex(0x16203c), 0);
+        lv_obj_set_style_bg_opa(row, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_color(row, lv_color_hex(0x33406a), 0);
+        lv_obj_set_style_border_width(row, 2, 0);
+        lv_obj_set_style_radius(row, 8, 0);
+        lv_obj_set_style_pad_all(row, 8, 0);
+        lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+
+        // Callsign / Registrierung + Typ (links)
+        char id[24];
+        const char *cs = a->flight[0] ? a->flight : (a->reg[0] ? a->reg : "?");
+        if (a->type[0]) snprintf(id, sizeof(id), "%s  %s", cs, a->type);
+        else            snprintf(id, sizeof(id), "%s", cs);
+        lv_obj_t *lid = lv_label_create(row);
+        lv_obj_set_style_text_font(lid, FONT_MED, 0);
+        lv_obj_set_style_text_color(lid, lv_color_hex(0xffffff), 0);
+        lv_label_set_text(lid, id);
+        lv_obj_align(lid, LV_ALIGN_LEFT_MID, 0, 0);
+
+        // Hoehe, Entfernung, Kurs (rechts)
+        char alt[12]; alt_text(a->alt_ft, alt, sizeof(alt));
+        char info[64];
+        if (a->track >= 0)
+            snprintf(info, sizeof(info), "%s  \xC2\xB7  %.0f nm  \xC2\xB7  %d\xC2\xB0 %s",
+                     alt, a->dst_nm, a->track, compass(a->track));
+        else
+            snprintf(info, sizeof(info), "%s  \xC2\xB7  %.0f nm", alt, a->dst_nm);
+        lv_obj_t *li = lv_label_create(row);
+        lv_obj_set_style_text_font(li, FONT_MED, 0);
+        lv_obj_set_style_text_color(li, lv_color_hex(0xb0b8d0), 0);
+        lv_label_set_text(li, info);
+        lv_obj_align(li, LV_ALIGN_RIGHT_MID, 0, 0);
+    }
+}
+
+static const slide_t SLIDE_PLANES = { "planes", "Flugzeuge", planes_build, NULL };
 
 // ========================= Slide 2: Netzwerk / IP ============================
 // Aktualisiert nur bei Zustandswechsel (LVGL zeichnet gleichen Text ohnehin
@@ -713,7 +797,7 @@ static const slide_t SLIDE_MSGBOARD = { "msg", "Message Board", msgboard_build, 
 // ============================================================================
 // Katalog aller Slides (Reihenfolge = Anzeigereihenfolge).
 static const slide_t *ALL_SLIDES[] = {
-    &SLIDE_CLOCK, &SLIDE_OWM, &SLIDE_CALENDAR, &SLIDE_DWD,
+    &SLIDE_CLOCK, &SLIDE_OWM, &SLIDE_PLANES, &SLIDE_CALENDAR, &SLIDE_DWD,
     &SLIDE_SPESSART, &SLIDE_INNENRAUM, &SLIDE_FRITZBOX, &SLIDE_NETWORK, &SLIDE_WIFI,
     &SLIDE_MSGBOARD,
 };

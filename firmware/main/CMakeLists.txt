@@ -16,6 +16,7 @@ idf_component_register(
         "dwd.c"
         "spessart.c"
         "owm.c"
+        "planes.c"
         "telegram.c"
         "sysstatus.c"
         "nina.c"

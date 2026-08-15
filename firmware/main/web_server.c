@@ -10,6 +10,7 @@
 #include "nina.h"
 #include "sysstatus.h"
 #include "owm.h"
+#include "planes.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -296,6 +297,31 @@ static esp_err_t settings_get(httpd_req_t *req)
         has_key ? "Key aktuell konfiguriert." : "");
     httpd_resp_sendstr_chunk(req, card);
 
+    // --- Flugzeuge-Card (airplanes.live: Standort + Radius) ---
+    char plat[16], plon[16], prad[8];
+    config_get_str_def("planes_lat", plat, sizeof(plat), "50.008");
+    config_get_str_def("planes_lon", plon, sizeof(plon), "9.216");
+    config_get_str_def("planes_radius", prad, sizeof(prad), "20");
+    char plat_esc[24], plon_esc[24], prad_esc[16];
+    html_escape(plat, plat_esc, sizeof(plat_esc));
+    html_escape(plon, plon_esc, sizeof(plon_esc));
+    html_escape(prad, prad_esc, sizeof(prad_esc));
+    snprintf(card, sizeof(card),
+        "<div class=card style='margin-top:16px'>"
+        "<h1>Flugzeuge</h1><div class=sub>airplanes.live (ohne API-Key)</div>"
+        "<form method=post action=/planes>"
+        "<label>Breite (lat)</label>"
+        "<input type=text name=lat value=\"%s\" placeholder='50.008'>"
+        "<label>L\xc3\xa4nge (lon)</label>"
+        "<input type=text name=lon value=\"%s\" placeholder='9.216'>"
+        "<label>Radius (Seemeilen, max. 250)</label>"
+        "<input type=text name=radius value=\"%s\" placeholder='20'>"
+        "<button type=submit>Speichern</button></form>"
+        "<div class=st>Standort und Umkreis f\xc3\xbcr die Flugzeug-Anzeige und das "
+        "Telegram-Kommando \xe2\x80\x9eplanes\xe2\x80\x9c. Leer = Johannesberg.</div></div>",
+        plat_esc, plon_esc, prad_esc);
+    httpd_resp_sendstr_chunk(req, card);
+
     // --- Telegram-Card (Bot-Token + Gruppen-ID) ---
     char tgchat[32] = { 0 };
     config_get_str("tg_chat", tgchat, sizeof(tgchat));
@@ -456,6 +482,31 @@ static esp_err_t owm_post(httpd_req_t *req)
 static esp_err_t owm_refresh_post(httpd_req_t *req)
 {
     owm_refresh();
+    return redirect_settings(req);
+}
+
+// Standort/Radius fuer die Flugzeug-Anzeige (airplanes.live) speichern.
+static esp_err_t planes_post(httpd_req_t *req)
+{
+    char body[160];
+    int total = req->content_len < (int)sizeof(body) - 1 ? req->content_len : (int)sizeof(body) - 1;
+    int recvd = total > 0 ? httpd_req_recv(req, body, total) : 0;
+    if (recvd < 0) return ESP_FAIL;
+    body[recvd > 0 ? recvd : 0] = '\0';
+
+    char lat[16] = { 0 }, lon[16] = { 0 }, rad[8] = { 0 };
+    form_field(body, "lat", lat, sizeof(lat));
+    form_field(body, "lon", lon, sizeof(lon));
+    form_field(body, "radius", rad, sizeof(rad));
+    // Radius auf 1..250 Seemeilen begrenzen (API-Grenze); leer = Default.
+    if (rad[0]) {
+        int r = atoi(rad);
+        if (r < 1) r = 1; else if (r > 250) r = 250;
+        snprintf(rad, sizeof(rad), "%d", r);
+    }
+    config_set_str("planes_lat", lat);       // leer = Johannesberg-Default
+    config_set_str("planes_lon", lon);
+    config_set_str("planes_radius", rad);
     return redirect_settings(req);
 }
 
@@ -829,6 +880,7 @@ void web_server_start(void)
     httpd_uri_t tdel = { .uri = "/tdel", .method = HTTP_POST, .handler = tdel_post };
     httpd_uri_t owm  = { .uri = "/owm", .method = HTTP_POST, .handler = owm_post };
     httpd_uri_t owr  = { .uri = "/owm/refresh", .method = HTTP_POST, .handler = owm_refresh_post };
+    httpd_uri_t pln  = { .uri = "/planes", .method = HTTP_POST, .handler = planes_post };
     httpd_uri_t dev  = { .uri = "/device", .method = HTTP_POST, .handler = device_post };
     httpd_uri_t brg  = { .uri = "/brightness", .method = HTTP_POST, .handler = brightness_post };
     httpd_uri_t sld  = { .uri = "/slides", .method = HTTP_POST, .handler = slides_post };
@@ -851,6 +903,7 @@ void web_server_start(void)
     httpd_register_uri_handler(server, &tdel);
     httpd_register_uri_handler(server, &owm);
     httpd_register_uri_handler(server, &owr);
+    httpd_register_uri_handler(server, &pln);
     httpd_register_uri_handler(server, &dev);
     httpd_register_uri_handler(server, &brg);
     httpd_register_uri_handler(server, &sld);
