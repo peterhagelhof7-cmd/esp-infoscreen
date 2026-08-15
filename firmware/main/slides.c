@@ -12,6 +12,7 @@
 #include "dht22.h"
 #include "owm.h"
 #include "planes.h"
+#include "space.h"
 #include "telegram.h"
 #include "config_store.h"
 #include "fonts_de.h"
@@ -373,6 +374,87 @@ static void planes_build(lv_obj_t *p)
 }
 
 static const slide_t SLIDE_PLANES = { "planes", "Flugzeuge", planes_build, NULL };
+
+// ========================= Slide: Nachtobjekte ===============================
+// Nachts sichtbare Satelliten-Ueberfluege (N2YO) + erdnahe Objekte (NeoWs).
+static lv_obj_t *night_row(lv_obj_t *p, int y, const char *left, const char *right)
+{
+    lv_obj_t *l = lv_label_create(p);
+    lv_obj_set_style_text_font(l, FONT_MED, 0);
+    lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
+    lv_obj_set_width(l, 470);
+    lv_label_set_long_mode(l, LV_LABEL_LONG_DOT);
+    lv_label_set_text(l, left);
+    lv_obj_align(l, LV_ALIGN_TOP_LEFT, 24, y);
+    if (right) {
+        lv_obj_t *r = lv_label_create(p);
+        lv_obj_set_style_text_font(r, FONT_MED, 0);
+        lv_obj_set_style_text_color(r, lv_color_hex(0xb0b8d0), 0);
+        lv_label_set_text(r, right);
+        lv_obj_align(r, LV_ALIGN_TOP_RIGHT, -24, y);
+    }
+    return l;
+}
+
+static void night_head(lv_obj_t *p, int y, const char *txt)
+{
+    lv_obj_t *h = lv_label_create(p);
+    lv_obj_set_style_text_font(h, FONT_MED, 0);
+    lv_obj_set_style_text_color(h, lv_color_hex(0x8ab4f8), 0);
+    lv_label_set_text(h, txt);
+    lv_obj_align(h, LV_ALIGN_TOP_LEFT, 24, y);
+}
+
+static void night_build(lv_obj_t *p)
+{
+    sat_passes_t sp; space_get_passes(&sp);
+    neos_t ne; space_get_neos(&ne);
+    int y = 10;
+
+    // --- sichtbare Ueberfluege ---
+    night_head(p, y, "Sichtbare \xc3\x9c""berfl\xc3\xbcge (heute Nacht)");
+    y += 40;
+    if (!sp.has_key) {
+        night_row(p, y, "N2YO-Key fehlt (Einstellungen)", NULL); y += 38;
+    } else if (!sp.valid || sp.count == 0) {
+        night_row(p, y, sp.valid ? "keine sichtbaren \xc3\x9c""berfl\xc3\xbcge" : "Daten noch nicht verf\xc3\xbcgbar", NULL);
+        y += 38;
+    } else {
+        int rows = sp.count < 4 ? sp.count : 4;
+        for (int i = 0; i < rows; i++) {
+            const sat_pass_t *a = &sp.p[i];
+            char hm[8] = "--:--";
+            if (a->max_utc) { struct tm t; localtime_r(&a->max_utc, &t); strftime(hm, sizeof(hm), "%H:%M", &t); }
+            char left[48];  snprintf(left, sizeof(left), "%s  %s", hm, a->name);
+            char right[40];
+            if (a->mag < 90.0) snprintf(right, sizeof(right), "%d\xc2\xb0 %s   mag %.1f", a->max_el, a->dir, a->mag);
+            else               snprintf(right, sizeof(right), "%d\xc2\xb0 %s", a->max_el, a->dir);
+            night_row(p, y, left, right); y += 38;
+        }
+    }
+
+    // --- erdnahe Objekte ---
+    y += 12;
+    night_head(p, y, "Erdnahe Objekte (heute)");
+    y += 40;
+    if (!ne.has_key) {
+        night_row(p, y, "NASA-Key fehlt (Einstellungen)", NULL);
+    } else if (!ne.valid || ne.count == 0) {
+        night_row(p, y, ne.valid ? "keine erdnahen Objekte" : "Daten noch nicht verf\xc3\xbcgbar", NULL);
+    } else {
+        int rows = ne.count < 3 ? ne.count : 3;
+        for (int i = 0; i < rows; i++) {
+            const neo_t *o = &ne.n[i];
+            char left[40];  snprintf(left, sizeof(left), "%s%s", o->name, o->hazard ? "  !" : "");
+            char right[40];
+            double mio = o->miss_km / 1e6;
+            snprintf(right, sizeof(right), "%.2f Mio km   %.0f m", mio, o->diam_m);
+            night_row(p, y, left, right); y += 38;
+        }
+    }
+}
+
+static const slide_t SLIDE_NIGHT = { "night", "Nachtobjekte", night_build, NULL };
 
 // ========================= Slide 2: Netzwerk / IP ============================
 // Aktualisiert nur bei Zustandswechsel (LVGL zeichnet gleichen Text ohnehin
@@ -807,7 +889,7 @@ static const slide_t SLIDE_MSGBOARD = { "msg", "Message Board", msgboard_build, 
 // ============================================================================
 // Katalog aller Slides (Reihenfolge = Anzeigereihenfolge).
 static const slide_t *ALL_SLIDES[] = {
-    &SLIDE_CLOCK, &SLIDE_OWM, &SLIDE_PLANES, &SLIDE_CALENDAR, &SLIDE_DWD,
+    &SLIDE_CLOCK, &SLIDE_OWM, &SLIDE_PLANES, &SLIDE_NIGHT, &SLIDE_CALENDAR, &SLIDE_DWD,
     &SLIDE_SPESSART, &SLIDE_INNENRAUM, &SLIDE_FRITZBOX, &SLIDE_NETWORK, &SLIDE_WIFI,
     &SLIDE_MSGBOARD,
 };

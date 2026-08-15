@@ -9,6 +9,7 @@
 #include "nina.h"
 #include "kino.h"
 #include "feiertage.h"
+#include "space.h"
 #include "sysstatus.h"
 #include "dht22.h"
 #include "owm.h"
@@ -527,10 +528,56 @@ static void cmd_alarm(void)
     telegram_send(msg);
 }
 
+// "nacht": heute Nacht sichtbare Satelliten-Ueberfluege (N2YO) + erdnahe
+// Objekte/Asteroiden (NeoWs). Zwei Nachrichten (urlencode-Grenze). Cache.
+static void cmd_nacht(void)
+{
+    static EXT_RAM_BSS_ATTR char msg[500];
+
+    sat_passes_t sp; space_get_passes(&sp);
+    size_t o = snprintf(msg, sizeof(msg), "🛰 Sichtbare Überflüge (heute Nacht):");
+    if (!sp.has_key)
+        o += snprintf(msg + o, sizeof(msg) - o, "\n(N2YO-Key fehlt – in den Einstellungen setzen)");
+    else if (!sp.valid || sp.count == 0)
+        o += snprintf(msg + o, sizeof(msg) - o, "\nkeine sichtbaren Überflüge");
+    else {
+        int rows = sp.count < 6 ? sp.count : 6;
+        for (int i = 0; i < rows; i++) {
+            const sat_pass_t *a = &sp.p[i];
+            char hm[8] = "--:--";
+            if (a->max_utc) { struct tm t; localtime_r(&a->max_utc, &t); strftime(hm, sizeof(hm), "%H:%M", &t); }
+            if (a->mag < 90.0)
+                o += snprintf(msg + o, sizeof(msg) - o, "\n%s %s – %d° %s, mag %.1f",
+                              hm, a->name, a->max_el, a->dir, a->mag);
+            else
+                o += snprintf(msg + o, sizeof(msg) - o, "\n%s %s – %d° %s", hm, a->name, a->max_el, a->dir);
+            if (o > sizeof(msg) - 90) break;
+        }
+    }
+    telegram_send(msg);
+
+    neos_t ne; space_get_neos(&ne);
+    o = snprintf(msg, sizeof(msg), "☄ Erdnahe Objekte heute:");
+    if (!ne.has_key)
+        o += snprintf(msg + o, sizeof(msg) - o, "\n(NASA-Key fehlt – in den Einstellungen setzen)");
+    else if (!ne.valid || ne.count == 0)
+        o += snprintf(msg + o, sizeof(msg) - o, "\nkeine");
+    else {
+        int rows = ne.count < 5 ? ne.count : 5;
+        for (int i = 0; i < rows; i++) {
+            const neo_t *ob = &ne.n[i];
+            o += snprintf(msg + o, sizeof(msg) - o, "\n%s%s – %.2f Mio km, ⌀ %.0f m",
+                          ob->name, ob->hazard ? " ⚠" : "", ob->miss_km / 1e6, ob->diam_m);
+            if (o > sizeof(msg) - 80) break;
+        }
+    }
+    telegram_send(msg);
+}
+
 // Kommandoliste ausgeben.
 static void send_help(void)
 {
-    char msg[640];
+    static EXT_RAM_BSS_ATTR char msg[960];   // waechst mit der Kommandoliste; static/PSRAM
     snprintf(msg, sizeof(msg),
         "\xF0\x9F\xA4\x96 Kommandos (@%s ...):\n"
         "\xE2\x80\xA2 Wetter \xE2\x80\x93 aktuelle Spessartwetter-Werte\n"
@@ -543,6 +590,7 @@ static void send_help(void)
         "\xE2\x80\xA2 status \xE2\x80\x93 Uptime / Heap / WLAN\n"
         "\xE2\x80\xA2 stacks \xE2\x80\x93 Stack-Reserve je Task (Diagnose)\n"
         "\xE2\x80\xA2 alarm \xE2\x80\x93 aktive Warnungen (DWD/NINA/B\xC3\xB6""en)\n"
+        "\xE2\x80\xA2 nacht \xE2\x80\x93 sichtbare Satelliten + Asteroiden\n"
         "\xE2\x80\xA2 kino \xE2\x80\x93 aktuelles Kinoprogramm\n"
         "\xE2\x80\xA2 kino preview \xE2\x80\x93 Programm ab n\xC3\xA4""chster Woche\n"
         "\xE2\x80\xA2 neu termin JJJJ-MM-TT Text \xE2\x80\x93 Termin anlegen",
@@ -610,6 +658,12 @@ static void handle_command(const char *text)
     // Aktive Warnungen (DWD / NINA / Boeen) zusammengefasst.
     if (contains_ci(low, "alarm")) {
         cmd_alarm();
+        return;
+    }
+
+    // Nachtobjekte: sichtbare Satelliten-Ueberfluege + Asteroiden.
+    if (contains_ci(low, "nacht")) {
+        cmd_nacht();
         return;
     }
 

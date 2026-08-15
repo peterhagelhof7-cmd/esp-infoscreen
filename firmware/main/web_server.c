@@ -11,6 +11,7 @@
 #include "sysstatus.h"
 #include "owm.h"
 #include "planes.h"
+#include "space.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -325,6 +326,29 @@ static esp_err_t settings_get(httpd_req_t *req)
         plat_esc, plon_esc, prad_esc);
     httpd_resp_sendstr_chunk(req, card);
 
+    // --- Nachtobjekte-Card (N2YO + NASA Keys, Beobachterhoehe) ---
+    char n2yo[48] = { 0 }; bool has_n2yo = config_get_str("n2yo_key", n2yo, sizeof(n2yo)) && n2yo[0];
+    char nasa[48] = { 0 }; bool has_nasa = config_get_str("nasa_key", nasa, sizeof(nasa)) && nasa[0];
+    char salt[8]; config_get_str_def("space_alt", salt, sizeof(salt), "200");
+    char salt_esc[16]; html_escape(salt, salt_esc, sizeof(salt_esc));
+    snprintf(card, sizeof(card),
+        "<div class=card style='margin-top:16px'>"
+        "<h1>Nachtobjekte</h1><div class=sub>Satelliten (N2YO) + Asteroiden (NASA)</div>"
+        "<form method=post action=/space>"
+        "<label>N2YO API-Key</label>"
+        "<input type=text name=n2yo placeholder='%s' autocomplete=off>"
+        "<label>NASA API-Key</label>"
+        "<input type=text name=nasa placeholder='%s' autocomplete=off>"
+        "<label>Beobachterh\xc3\xb6he (m)</label>"
+        "<input type=text name=alt value=\"%s\" placeholder='200'>"
+        "<button type=submit>Speichern</button></form>"
+        "<div class=st>Keys gratis: n2yo.com und api.nasa.gov. Standort = wie Flugzeuge. "
+        "Zeigt nachts sichtbare \xc3\x9c""berfl\xc3\xbcge + heutige erdnahe Objekte (Slide/Bot \xe2\x80\x9enacht\xe2\x80\x9c).</div></div>",
+        has_n2yo ? "gesetzt" : "nicht gesetzt",
+        has_nasa ? "eigener Key gesetzt" : "DEMO_KEY aktiv (Limit ~50/Tag)",
+        salt_esc);
+    httpd_resp_sendstr_chunk(req, card);
+
     // --- Feiertage-Card (Bundesland-Auswahl) ---
     char fbl[8]; config_get_str_def("feiertage_bl", fbl, sizeof(fbl), "BY");
     httpd_resp_sendstr_chunk(req,
@@ -563,6 +587,26 @@ static esp_err_t feiertage_post(httpd_req_t *req)
     char bl[8] = { 0 };
     form_field(body, "bl", bl, sizeof(bl));
     config_set_str("feiertage_bl", bl);
+    return redirect_settings(req);
+}
+
+// N2YO- + NASA-Key und Beobachterhoehe fuer die Nachtobjekte speichern.
+static esp_err_t space_post(httpd_req_t *req)
+{
+    char body[256];
+    int total = req->content_len < (int)sizeof(body) - 1 ? req->content_len : (int)sizeof(body) - 1;
+    int recvd = total > 0 ? httpd_req_recv(req, body, total) : 0;
+    if (recvd < 0) return ESP_FAIL;
+    body[recvd > 0 ? recvd : 0] = '\0';
+
+    char v[64] = { 0 };
+    if (form_field(body, "n2yo", v, sizeof(v)) && v[0]) config_set_str("n2yo_key", v);
+    v[0] = '\0';
+    if (form_field(body, "nasa", v, sizeof(v)) && v[0]) config_set_str("nasa_key", v);
+    char alt[8] = { 0 };
+    form_field(body, "alt", alt, sizeof(alt));
+    config_set_str("space_alt", alt);   // leer = Default 200 m
+    space_wake();   // Poller sofort neu abrufen lassen (nicht-blockierend)
     return redirect_settings(req);
 }
 
@@ -946,6 +990,7 @@ void web_server_start(void)
     httpd_uri_t owr  = { .uri = "/owm/refresh", .method = HTTP_POST, .handler = owm_refresh_post };
     httpd_uri_t pln  = { .uri = "/planes", .method = HTTP_POST, .handler = planes_post };
     httpd_uri_t fei  = { .uri = "/feiertage", .method = HTTP_POST, .handler = feiertage_post };
+    httpd_uri_t spc  = { .uri = "/space", .method = HTTP_POST, .handler = space_post };
     httpd_uri_t dev  = { .uri = "/device", .method = HTTP_POST, .handler = device_post };
     httpd_uri_t brg  = { .uri = "/brightness", .method = HTTP_POST, .handler = brightness_post };
     httpd_uri_t sld  = { .uri = "/slides", .method = HTTP_POST, .handler = slides_post };
@@ -970,6 +1015,7 @@ void web_server_start(void)
     httpd_register_uri_handler(server, &owr);
     httpd_register_uri_handler(server, &pln);
     httpd_register_uri_handler(server, &fei);
+    httpd_register_uri_handler(server, &spc);
     httpd_register_uri_handler(server, &dev);
     httpd_register_uri_handler(server, &brg);
     httpd_register_uri_handler(server, &sld);

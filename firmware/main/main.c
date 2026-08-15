@@ -15,6 +15,7 @@
 #include "spessart.h"
 #include "owm.h"
 #include "planes.h"
+#include "space.h"
 #include "telegram.h"
 #include "kino.h"
 #include "dht22.h"
@@ -75,6 +76,7 @@ void app_main(void)
     spessart_init();   // spessartwetter.de
     owm_init();        // OpenWeatherMap
     planes_init();     // Flugzeuge in der Naehe (airplanes.live)
+    space_init();      // Nachtobjekte: Satelliten (N2YO) + Asteroiden (NeoWs)
     termine_init();    // Auto-Aufraeumung vergangener Termine
     dht22_init();      // Innenraumsensor (P4, GPIO18)
 
