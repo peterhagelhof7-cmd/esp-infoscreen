@@ -141,10 +141,10 @@ bool telegram_send(const char *text)
 
     char enc[1024];
     urlencode(text, enc, sizeof(enc));
-    static char url[1400];
+    static EXT_RAM_BSS_ATTR char url[1400];   // PSRAM (spart internen RAM)
     snprintf(url, sizeof(url), "%s%s/sendMessage?chat_id=%s&text=%s", API, token, chat, enc);
 
-    static char resp[512];
+    static EXT_RAM_BSS_ATTR char resp[512];   // PSRAM
     int n = http_get(url, resp, sizeof(resp));
     if (n <= 0) { ESP_LOGW(TAG, "sendMessage fehlgeschlagen"); return false; }
     return true;
@@ -503,6 +503,7 @@ static void send_help(void)
         "\xE2\x80\xA2 internet \xE2\x80\x93 Internet-/Fritzbox-Daten\n"
         "\xE2\x80\xA2 termin \xE2\x80\x93 die n\xC3\xA4""chsten 2 Termine\n"
         "\xE2\x80\xA2 status \xE2\x80\x93 Uptime / Heap / WLAN\n"
+        "\xE2\x80\xA2 stacks \xE2\x80\x93 Stack-Reserve je Task (Diagnose)\n"
         "\xE2\x80\xA2 kino \xE2\x80\x93 aktuelles Kinoprogramm\n"
         "\xE2\x80\xA2 kino preview \xE2\x80\x93 Programm ab n\xC3\xA4""chster Woche\n"
         "\xE2\x80\xA2 neu termin JJJJ-MM-TT Text \xE2\x80\x93 Termin anlegen",
@@ -534,7 +535,7 @@ static void handle_command(const char *text)
     // Kino: eigenstaendige Kommandos (static buf haelt den Task-Stack frei).
     // "kino preview" zuerst pruefen (enthaelt sonst "kino").
     if (contains_ci(low, "kino")) {
-        static char kb[700];
+        static EXT_RAM_BSS_ATTR char kb[700];   // PSRAM
         if (contains_ci(low, "kino preview")) kino_build_preview(kb, sizeof(kb));
         else                                  kino_build_current(kb, sizeof(kb));
         telegram_send(kb);
@@ -556,6 +557,14 @@ static void handle_command(const char *text)
     // Feiertage: eigenstaendig (die naechsten Feiertage des Bundeslandes).
     if (contains_ci(low, "feiertag")) {
         cmd_feiertag();
+        return;
+    }
+
+    // Stack-Diagnose: eigenstaendig (lange Liste). "stacks" vor "status" pruefen.
+    if (contains_ci(low, "stacks")) {
+        static EXT_RAM_BSS_ATTR char sb[900];
+        sysstatus_stacks(sb, sizeof(sb));
+        telegram_send(sb);
         return;
     }
 
@@ -590,7 +599,7 @@ static void fetch_botname(const char *token)
 {
     char url[128];
     snprintf(url, sizeof(url), "%s%s/getMe", API, token);
-    static char resp[512];
+    static EXT_RAM_BSS_ATTR char resp[512];   // PSRAM
     if (http_get(url, resp, sizeof(resp)) <= 0) return;
     cJSON *root = cJSON_Parse(resp);
     if (root) {

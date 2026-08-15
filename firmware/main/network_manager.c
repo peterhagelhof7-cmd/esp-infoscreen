@@ -51,14 +51,6 @@ int network_manager_get_avg_rssi(void)
     return sum / s_rssi_count;
 }
 
-static void set_mode(net_mode_t m)
-{
-    xSemaphoreTake(s_lock, portMAX_DELAY);
-    s_status.mode = m;
-    if (m != NET_MODE_STA_CONNECTED) { s_status.connected = false; s_status.ip[0] = '\0'; }
-    xSemaphoreGive(s_lock);
-}
-
 static void start_installer_ap(void)
 {
     ESP_LOGW(TAG, "Starte Einrichtungs-AP \"%s\" (%s)", NET_AP_SSID, NET_AP_IP);

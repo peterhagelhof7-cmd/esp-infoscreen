@@ -104,7 +104,7 @@ static esp_err_t settings_get(httpd_req_t *req)
     // Gemeinsamer Karten-Puffer (static): alle Karten werden nacheinander hier
     // aufgebaut und gesendet -> KEINE Aufsummierung auf dem Handler-Stack.
     // (HTTP-Handler laufen alle im EINEN Server-Task, sequenziell -> reentrant-sicher.)
-    static char card[832];
+    static EXT_RAM_BSS_ATTR char card[832];   // PSRAM (spart internen RAM)
 
     httpd_resp_set_type(req, "text/html; charset=utf-8");
     // Nicht cachen: sonst liefert der Browser beim "Netzwerke neu suchen" die
@@ -133,7 +133,7 @@ static esp_err_t settings_get(httpd_req_t *req)
 
     // SSID max 32 Byte, HTML-escaped bis ~6x -> grosszuegig dimensionieren
     // (esc taucht 2x in der Option auf). static: siehe card-Hinweis oben.
-    static char esc[208];
+    static EXT_RAM_BSS_ATTR char esc[208];   // PSRAM
     for (int i = 0; i < n; i++) {
         html_escape(aps[i].ssid, esc, sizeof(esc));
         snprintf(card, sizeof(card), "<option value=\"%s\">%s (%d dBm)%s</option>",
@@ -394,6 +394,18 @@ static esp_err_t settings_get(httpd_req_t *req)
             "<pre style='white-space:pre-wrap;margin:0;font-size:14px;color:#b0b8d0'>%s</pre></div>",
             status);
         httpd_resp_sendstr_chunk(req, card);
+    }
+
+    // --- Task-Stacks-Card (Diagnose: min. freie Stack-Reserve je Task) ---
+    {
+        static EXT_RAM_BSS_ATTR char stk[900];
+        sysstatus_stacks(stk, sizeof(stk));
+        static EXT_RAM_BSS_ATTR char c2[1100];
+        snprintf(c2, sizeof(c2),
+            "<div class=card style='margin-top:16px'><h1>Task-Stacks</h1>"
+            "<pre style='white-space:pre-wrap;margin:0;font-size:13px;color:#b0b8d0'>%s</pre></div>",
+            stk);
+        httpd_resp_sendstr_chunk(req, c2);
     }
 
     // --- System-Card (Einstellungen laden/speichern, Werksreset, Neustart) ---

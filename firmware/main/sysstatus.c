@@ -2,10 +2,13 @@
 #include "network_manager.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include "esp_timer.h"
 #include "esp_heap_caps.h"
 #include "esp_system.h"
 #include "esp_app_desc.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 void sysstatus_text(char *buf, size_t len)
 {
@@ -45,4 +48,22 @@ void sysstatus_text(char *buf, size_t len)
         (unsigned)(free_int / 1024), (unsigned)(min_int / 1024), (unsigned)(big_int / 1024),
         (unsigned)(free_ps / 1024),
         netline);
+}
+
+void sysstatus_stacks(char *buf, size_t len)
+{
+    UBaseType_t n = uxTaskGetNumberOfTasks() + 5;   // etwas Reserve gg. Task-Race
+    // Task-Array ins PSRAM (schont den knappen internen RAM waehrend der Abfrage).
+    TaskStatus_t *arr = heap_caps_malloc(n * sizeof(TaskStatus_t), MALLOC_CAP_SPIRAM);
+    if (!arr) arr = malloc(n * sizeof(TaskStatus_t));
+    if (!arr) { snprintf(buf, len, "Stacks: kein Speicher"); return; }
+
+    UBaseType_t got = uxTaskGetSystemState(arr, n, NULL);
+    size_t o = snprintf(buf, len, "Stack-Reserve (min frei seit Boot):");
+    for (UBaseType_t i = 0; i < got && o < len - 32; i++) {
+        // usStackHighWaterMark ist in ESP-IDF in BYTES (kleinster freier Stack).
+        o += snprintf(buf + o, len - o, "\n%-12s %5u B",
+                      arr[i].pcTaskName, (unsigned)arr[i].usStackHighWaterMark);
+    }
+    free(arr);
 }
