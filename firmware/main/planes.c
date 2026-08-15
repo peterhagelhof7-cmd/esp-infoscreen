@@ -14,8 +14,11 @@
 
 static const char *TAG = "planes";
 
-// airplanes.live: Punkt-Abfrage. Radius in nautischen Meilen (max. 250).
-#define URL_FMT  "https://api.airplanes.live/v2/point/%s/%s/%s"
+// adsb.lol: Punkt-Abfrage (kostenlos, ohne API-Key, gleiches v2-Format wie
+// airplanes.live). Radius in nautischen Meilen (max. 250). airplanes.live
+// selbst hat den offenen Zugang zugunsten einer Registrierungspflicht
+// eingestellt (HTTP 403 mit Kontakt-Aufforderung), daher adsb.lol.
+#define URL_FMT  "https://api.adsb.lol/v2/point/%s/%s/%s"
 #define DEF_LAT  "50.008"    // Johannesberg
 #define DEF_LON  "9.216"
 #define DEF_RAD  "20"        // nautische Meilen

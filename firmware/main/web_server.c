@@ -308,7 +308,7 @@ static esp_err_t settings_get(httpd_req_t *req)
     html_escape(prad, prad_esc, sizeof(prad_esc));
     snprintf(card, sizeof(card),
         "<div class=card style='margin-top:16px'>"
-        "<h1>Flugzeuge</h1><div class=sub>airplanes.live (ohne API-Key)</div>"
+        "<h1>Flugzeuge</h1><div class=sub>adsb.lol (ohne API-Key)</div>"
         "<form method=post action=/planes>"
         "<label>Breite (lat)</label>"
         "<input type=text name=lat value=\"%s\" placeholder='50.008'>"

@@ -2,11 +2,12 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-// Flugzeuge in der Naehe des Standorts ueber die airplanes.live-API
-// (https://api.airplanes.live/v2/point/<lat>/<lon>/<radius>). Kostenlos, ohne
-// API-Key/Anmeldung, nicht-kommerziell, Rate-Limit ~1 Anfrage/Sekunde. Der
-// Standort (Breite/Laenge) und der Radius (in nautischen Meilen, max. 250)
-// sind ueber das Webinterface einstellbar (Config planes_lat/lon/radius).
+// Flugzeuge in der Naehe des Standorts ueber die adsb.lol-API
+// (https://api.adsb.lol/v2/point/<lat>/<lon>/<radius>). Kostenlos, ohne
+// API-Key/Anmeldung. Gleiches v2-Format wie airplanes.live (das den offenen
+// Zugang inzwischen gesperrt hat). Der Standort (Breite/Laenge) und der Radius
+// (in nautischen Meilen, max. 250) sind ueber das Webinterface einstellbar
+// (Config planes_lat/lon/radius).
 
 #define PLANES_MAX 8   // so viele naechste Flugzeuge werden vorgehalten
 
