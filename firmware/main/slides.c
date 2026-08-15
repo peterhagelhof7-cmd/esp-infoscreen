@@ -4,6 +4,7 @@
 #include "time_sync.h"
 #include "fritzbox.h"
 #include "muell.h"
+#include "feiertage.h"
 #include "termine.h"
 #include "dwd.h"
 #include "nina.h"
@@ -578,6 +579,15 @@ static void calendar_build(lv_obj_t *p)
         strncpy(ev[n].date, me[i].day, sizeof(ev[0].date) - 1); ev[n].date[10] = '\0';
         char ti[32]; de_ascii(me[i].title, ti, sizeof(ti));
         snprintf(ev[n].label, sizeof(ev[n].label), "Abfuhr: %s", ti);
+        n++;
+    }
+    // Feiertage (gewaehltes Bundesland)
+    static EXT_RAM_BSS_ATTR feiertag_t fe[40];
+    int fn = feiertage_get(fe, 40);
+    for (int i = 0; i < fn && n < 100; i++) {
+        if (today[0] && strcmp(fe[i].date, today) < 0) continue;
+        strncpy(ev[n].date, fe[i].date, sizeof(ev[0].date) - 1); ev[n].date[10] = '\0';
+        snprintf(ev[n].label, sizeof(ev[n].label), "%s", fe[i].name);
         n++;
     }
     // nach Datum sortieren (ISO-String)

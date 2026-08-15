@@ -8,6 +8,7 @@
 #include "dwd.h"
 #include "nina.h"
 #include "kino.h"
+#include "feiertage.h"
 #include "sysstatus.h"
 #include "dht22.h"
 #include "owm.h"
@@ -202,6 +203,14 @@ static void build_termine(char *out, size_t len)
     for (int i = 0; i < mn && n < 100; i++) {
         strncpy(ev[n].date, me[i].day, 10); ev[n].date[10] = '\0';
         snprintf(ev[n].label, sizeof(ev[n].label), "Abfuhr: %s", me[i].title);
+        n++;
+    }
+    static EXT_RAM_BSS_ATTR feiertag_t fe[40];   // PSRAM
+    int fn = feiertage_get(fe, 40);
+    for (int i = 0; i < fn && n < 100; i++) {
+        if (today[0] && strcmp(fe[i].date, today) < 0) continue;
+        strncpy(ev[n].date, fe[i].date, 10); ev[n].date[10] = '\0';
+        snprintf(ev[n].label, sizeof(ev[n].label), "%s", fe[i].name);
         n++;
     }
     for (int i = 0; i < n; i++)

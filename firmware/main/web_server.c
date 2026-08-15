@@ -322,6 +322,32 @@ static esp_err_t settings_get(httpd_req_t *req)
         plat_esc, plon_esc, prad_esc);
     httpd_resp_sendstr_chunk(req, card);
 
+    // --- Feiertage-Card (Bundesland-Auswahl) ---
+    char fbl[8]; config_get_str_def("feiertage_bl", fbl, sizeof(fbl), "BY");
+    httpd_resp_sendstr_chunk(req,
+        "<div class=card style='margin-top:16px'>"
+        "<h1>Feiertage</h1><div class=sub>Gesetzliche Feiertage im Terminplan</div>"
+        "<form method=post action=/feiertage>"
+        "<label>Bundesland</label><select name=bl>");
+    static const char *BL[17][2] = {
+        { "",   "Aus" },
+        { "BW", "Baden-Württemberg" }, { "BY", "Bayern" }, { "BE", "Berlin" },
+        { "BB", "Brandenburg" }, { "HB", "Bremen" }, { "HH", "Hamburg" },
+        { "HE", "Hessen" }, { "MV", "Mecklenburg-Vorpommern" }, { "NI", "Niedersachsen" },
+        { "NW", "Nordrhein-Westfalen" }, { "RP", "Rheinland-Pfalz" }, { "SL", "Saarland" },
+        { "SN", "Sachsen" }, { "ST", "Sachsen-Anhalt" }, { "SH", "Schleswig-Holstein" },
+        { "TH", "Thüringen" },
+    };
+    for (int i = 0; i < 17; i++) {
+        snprintf(card, sizeof(card), "<option value=\"%s\"%s>%s</option>",
+                 BL[i][0], strcmp(BL[i][0], fbl) == 0 ? " selected" : "", BL[i][1]);
+        httpd_resp_sendstr_chunk(req, card);
+    }
+    httpd_resp_sendstr_chunk(req,
+        "</select><button type=submit>Speichern</button></form>"
+        "<div class=st>Feiertage des gewählten Bundeslandes erscheinen im Terminplan "
+        "(wie die Müllabfuhr). Rein kommunale Tage sind nicht enthalten.</div></div>");
+
     // --- Telegram-Card (Bot-Token + Gruppen-ID) ---
     char tgchat[32] = { 0 };
     config_get_str("tg_chat", tgchat, sizeof(tgchat));
@@ -507,6 +533,21 @@ static esp_err_t planes_post(httpd_req_t *req)
     config_set_str("planes_lat", lat);       // leer = Johannesberg-Default
     config_set_str("planes_lon", lon);
     config_set_str("planes_radius", rad);
+    return redirect_settings(req);
+}
+
+// Bundesland fuer die gesetzlichen Feiertage speichern (leer = aus).
+static esp_err_t feiertage_post(httpd_req_t *req)
+{
+    char body[64];
+    int total = req->content_len < (int)sizeof(body) - 1 ? req->content_len : (int)sizeof(body) - 1;
+    int recvd = total > 0 ? httpd_req_recv(req, body, total) : 0;
+    if (recvd < 0) return ESP_FAIL;
+    body[recvd > 0 ? recvd : 0] = '\0';
+
+    char bl[8] = { 0 };
+    form_field(body, "bl", bl, sizeof(bl));
+    config_set_str("feiertage_bl", bl);
     return redirect_settings(req);
 }
 
@@ -881,6 +922,7 @@ void web_server_start(void)
     httpd_uri_t owm  = { .uri = "/owm", .method = HTTP_POST, .handler = owm_post };
     httpd_uri_t owr  = { .uri = "/owm/refresh", .method = HTTP_POST, .handler = owm_refresh_post };
     httpd_uri_t pln  = { .uri = "/planes", .method = HTTP_POST, .handler = planes_post };
+    httpd_uri_t fei  = { .uri = "/feiertage", .method = HTTP_POST, .handler = feiertage_post };
     httpd_uri_t dev  = { .uri = "/device", .method = HTTP_POST, .handler = device_post };
     httpd_uri_t brg  = { .uri = "/brightness", .method = HTTP_POST, .handler = brightness_post };
     httpd_uri_t sld  = { .uri = "/slides", .method = HTTP_POST, .handler = slides_post };
@@ -904,6 +946,7 @@ void web_server_start(void)
     httpd_register_uri_handler(server, &owm);
     httpd_register_uri_handler(server, &owr);
     httpd_register_uri_handler(server, &pln);
+    httpd_register_uri_handler(server, &fei);
     httpd_register_uri_handler(server, &dev);
     httpd_register_uri_handler(server, &brg);
     httpd_register_uri_handler(server, &sld);
