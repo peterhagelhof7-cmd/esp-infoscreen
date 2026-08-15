@@ -156,19 +156,20 @@ static void poll_once(int route_cap)
 
     int n = http_get(url, buf, sizeof(buf));
     if (n <= 0) {
-        ESP_LOGW(TAG, "Abruf fehlgeschlagen (%d)", n);
-        xSemaphoreTake(s_lock, portMAX_DELAY);
-        s_data.valid = false;
-        xSemaphoreGive(s_lock);
+        // adsb.lol schliesst die Verbindung gelegentlich ("connection reset")
+        // -> ein Retry. Bleibt es dabei, die LETZTE gute Liste behalten (kein
+        // valid=false), sonst flackert Slide/Bot bei kurzen Netz-Haengern.
+        vTaskDelay(pdMS_TO_TICKS(1500));
+        n = http_get(url, buf, sizeof(buf));
+    }
+    if (n <= 0) {
+        ESP_LOGW(TAG, "Abruf fehlgeschlagen (%d) - letzte Liste bleibt", n);
         return;
     }
 
     cJSON *root = cJSON_Parse(buf);
     if (!root) {
-        ESP_LOGW(TAG, "JSON-Parse fehlgeschlagen");
-        xSemaphoreTake(s_lock, portMAX_DELAY);
-        s_data.valid = false;
-        xSemaphoreGive(s_lock);
+        ESP_LOGW(TAG, "JSON-Parse fehlgeschlagen - letzte Liste bleibt");
         return;
     }
 

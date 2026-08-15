@@ -312,12 +312,13 @@ static void planes_build(lv_obj_t *p)
 {
     planes_data_t d; planes_get(&d);
 
+    // Kein ✈-Emoji: nicht im Font (würde als Kästchen erscheinen).
     lv_obj_t *hdr = lv_label_create(p);
     lv_obj_set_style_text_font(hdr, FONT_MED, 0);
     lv_obj_set_style_text_color(hdr, lv_color_hex(0x8ab4f8), 0);
     char htxt[48];
-    if (!d.valid)      snprintf(htxt, sizeof(htxt), "\xE2\x9C\x88 Flugzeuge \xE2\x80\x93 kein Abruf");
-    else               snprintf(htxt, sizeof(htxt), "\xE2\x9C\x88 Flugzeuge in der N\xC3\xA4he: %d", d.count);
+    if (!d.valid) snprintf(htxt, sizeof(htxt), "Flugzeuge - kein Abruf");
+    else          snprintf(htxt, sizeof(htxt), "Flugzeuge in der Nähe: %d", d.count);
     lv_label_set_text(hdr, htxt);
     lv_obj_align(hdr, LV_ALIGN_TOP_LEFT, 24, 12);
 
@@ -325,8 +326,8 @@ static void planes_build(lv_obj_t *p)
         lv_obj_t *l = lv_label_create(p);
         lv_obj_set_style_text_font(l, FONT_MED, 0);
         lv_obj_set_style_text_color(l, lv_color_hex(0xb0b8d0), 0);
-        lv_label_set_text(l, d.valid ? "Zurzeit keine Flugzeuge in der N\xC3\xA4he"
-                                     : "Daten noch nicht verf\xC3\xBcgbar");
+        lv_label_set_text(l, d.valid ? "Zurzeit keine Flugzeuge in der Nähe"
+                                     : "Daten noch nicht verfügbar");
         lv_obj_center(l);
         return;
     }
@@ -335,46 +336,41 @@ static void planes_build(lv_obj_t *p)
     for (int i = 0; i < rows; i++) {
         const plane_t *a = &d.ac[i];
         lv_obj_t *row = lv_obj_create(p);
-        lv_obj_set_size(row, 752, 56);
-        lv_obj_align(row, LV_ALIGN_TOP_MID, 0, 70 + i * 64);
+        lv_obj_set_size(row, 752, 52);
+        lv_obj_align(row, LV_ALIGN_TOP_MID, 0, 60 + i * 62);
         lv_obj_set_style_bg_color(row, lv_color_hex(0x16203c), 0);
         lv_obj_set_style_bg_opa(row, LV_OPA_COVER, 0);
         lv_obj_set_style_border_color(row, lv_color_hex(0x33406a), 0);
         lv_obj_set_style_border_width(row, 2, 0);
         lv_obj_set_style_radius(row, 8, 0);
-        lv_obj_set_style_pad_all(row, 8, 0);
+        lv_obj_set_style_pad_left(row, 14, 0);
+        lv_obj_set_style_pad_right(row, 14, 0);
         lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
 
-        // Links: Callsign (oben) + Route bzw. Typ (unten).
-        // Hinweis: Font hat KEIN "\xE2\x86\x92"/"\xC2\xB7" -> auf dem Display ">" und Leerzeichen.
+        // Links: Callsign + Route (Font hat kein →/·, daher ">"). Breite gedeckelt
+        // mit "..."-Kuerzung, damit die Zeile NIE in die rechte Spalte laeuft.
         const char *cs = a->flight[0] ? a->flight : (a->reg[0] ? a->reg : "?");
-        lv_obj_t *lcs = lv_label_create(row);
-        lv_obj_set_style_text_font(lcs, FONT_MED, 0);
-        lv_obj_set_style_text_color(lcs, lv_color_hex(0xffffff), 0);
-        lv_label_set_text(lcs, cs);
-        lv_obj_align(lcs, LV_ALIGN_TOP_LEFT, 0, 0);
-
-        char sub[32];
+        char left[28];
         if (a->from[0] || a->to[0])
-            snprintf(sub, sizeof(sub), "%s > %s", a->from[0] ? a->from : "?", a->to[0] ? a->to : "?");
-        else if (a->type[0])
-            snprintf(sub, sizeof(sub), "%s", a->type);
+            snprintf(left, sizeof(left), "%s  %s>%s", cs, a->from[0] ? a->from : "?", a->to[0] ? a->to : "?");
         else
-            sub[0] = '\0';
-        lv_obj_t *lsub = lv_label_create(row);
-        lv_obj_set_style_text_font(lsub, FONT_SM, 0);
-        lv_obj_set_style_text_color(lsub, lv_color_hex(0x8ab4f8), 0);
-        lv_label_set_text(lsub, sub);
-        lv_obj_align(lsub, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+            snprintf(left, sizeof(left), "%s", cs);
+        lv_obj_t *ll = lv_label_create(row);
+        lv_obj_set_style_text_font(ll, FONT_MED, 0);
+        lv_obj_set_style_text_color(ll, lv_color_hex(0xffffff), 0);
+        lv_obj_set_width(ll, 330);
+        lv_label_set_long_mode(ll, LV_LABEL_LONG_DOT);
+        lv_label_set_text(ll, left);
+        lv_obj_align(ll, LV_ALIGN_LEFT_MID, 0, 0);
 
-        // Rechts: Typ, Hoehe, Entfernung, Kurs (Leerzeichen als Trenner).
+        // Rechts: Typ, Höhe, Entfernung, Kurs (Leerzeichen als Trenner).
         char alt[12]; alt_text(a->alt_ft, alt, sizeof(alt));
-        char info[72];
+        char info[64];
         size_t io = 0;
         if (a->type[0]) io += snprintf(info + io, sizeof(info) - io, "%s   ", a->type);
         io += snprintf(info + io, sizeof(info) - io, "%s   %.0f nm", alt, a->dst_nm);
         if (a->track >= 0)
-            io += snprintf(info + io, sizeof(info) - io, "   %d\xC2\xB0 %s", a->track, compass(a->track));
+            io += snprintf(info + io, sizeof(info) - io, "   %d° %s", a->track, compass(a->track));
         lv_obj_t *li = lv_label_create(row);
         lv_obj_set_style_text_font(li, FONT_MED, 0);
         lv_obj_set_style_text_color(li, lv_color_hex(0xb0b8d0), 0);
