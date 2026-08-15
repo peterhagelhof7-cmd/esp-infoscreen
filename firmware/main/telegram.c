@@ -45,6 +45,8 @@ static char     s_last_warn[96];  // zuletzt gepostete DWD-Warnungs-Kopfzeile
 static char     s_last_nina[96];  // zuletzt gepostete BBK/NINA-Warnung
 static bool     s_boe_warned;     // Boeen-Warnung aktiv (Hysterese gg. Spam)
 #define BOE_WARN_KMH 50.0         // Schwelle fuer die Boeen-Warnung
+static int      s_summary_yday = -2;  // Tag (tm_yday) der letzten Tageszusammenfassung; -2 = Zeit noch nie gesehen
+#define SUMMARY_HOUR 6            // Uhrzeit der taeglichen Zusammenfassung (lokal)
 
 // --- kleine Helfer ----------------------------------------------------------
 static void tolower_str(char *s)
@@ -224,6 +226,53 @@ static void send_greeting(void)
     build_internet(net, sizeof(net));
     snprintf(msg, sizeof(msg), "\xF0\x9F\x94\x84 Wieder da!\n%s\n%s", w, net);
     telegram_send(msg);
+}
+
+// --- Taegliche Morgen-Zusammenfassung (Wetter + Termine) --------------------
+// Zwei Nachrichten (Wetter, dann Termine), damit keine die urlencode-Grenze
+// von telegram_send sprengt.
+static void send_daily_summary(void)
+{
+    owm_refresh();   // aktuelle Werte + Vorhersage (inkl. "heute") frisch holen
+    owm_data_t d; owm_get(&d);
+
+    char msg[400];
+    size_t o = snprintf(msg, sizeof(msg), "\xE2\x98\x80\xEF\xB8\x8F Guten Morgen! Deine Tages\xC3\xBCbersicht");
+    if (d.has_key && d.valid) {
+        o += snprintf(msg + o, sizeof(msg) - o,
+            "\n\xF0\x9F\x8C\xA4 Jetzt: %d\xC2\xB0""C (gef\xC3\xBChlt %d), %s",
+            d.temp, d.feels, d.desc[0] ? d.desc : "-");
+        if (d.today.valid)
+            o += snprintf(msg + o, sizeof(msg) - o,
+                "\nHeute: %d\xE2\x80\x93%d\xC2\xB0""C, %s",
+                d.today.tmin, d.today.tmax, d.today.desc[0] ? d.today.desc : "-");
+    } else {
+        char w[160]; build_weather(w, sizeof(w));   // Spessart-Fallback ohne OWM-Key
+        o += snprintf(msg + o, sizeof(msg) - o, "\n%s", w);
+    }
+    telegram_send(msg);
+
+    char t[240]; build_termine(t, sizeof(t));   // naechste Termine + Muellabfuhr
+    telegram_send(t);
+}
+
+// Einmal pro Tag um SUMMARY_HOUR die Zusammenfassung senden. Verhindert eine
+// Nachhol-Meldung beim Boot nach 6 Uhr: ist es beim ersten gueltigen Zeitpunkt
+// schon >= SUMMARY_HOUR, gilt der heutige Tag als erledigt (naechste = morgen).
+static void check_daily_summary(void)
+{
+    time_t now = time(NULL);
+    struct tm tm; localtime_r(&now, &tm);
+    if (tm.tm_year <= 120) return;   // keine gueltige Zeit (NTP fehlt)
+
+    if (s_summary_yday == -2) {
+        s_summary_yday = (tm.tm_hour >= SUMMARY_HOUR) ? tm.tm_yday : -1;
+        return;
+    }
+    if (tm.tm_hour >= SUMMARY_HOUR && tm.tm_yday != s_summary_yday) {
+        send_daily_summary();
+        s_summary_yday = tm.tm_yday;
+    }
 }
 
 // --- Befehle ----------------------------------------------------------------
@@ -595,6 +644,7 @@ static void poll_task(void *arg)
         check_warning();
         check_nina();
         check_boe();
+        check_daily_summary();   // Morgen-Zusammenfassung 1x/Tag um SUMMARY_HOUR
         kino_refresh_if_due();   // Kinoprogramm hoechstens 1x pro Kalendertag laden
         // 10 s statt 4 s: deutlich seltenere TLS-Handshakes -> weniger PSRAM-
         // Bandbreiten-Spitzen, die die RGB-DMA stoeren (Display-Artefakte).

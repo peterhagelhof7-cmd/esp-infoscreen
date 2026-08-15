@@ -160,18 +160,20 @@ static bool poll_forecast(void)
     cJSON *list = root ? cJSON_GetObjectItem(root, "list") : NULL;
     if (!cJSON_IsArray(list)) { cJSON_Delete(root); return false; }
 
-    owm_fc_day_t fc[3];
-    char dates[3][11];
-    for (int k = 0; k < 3; k++) {
+    // Index 0 = heute, 1..3 = morgen / uebermorgen / Tag danach.
+    owm_fc_day_t fc[4];
+    char dates[4][11];
+    for (int k = 0; k < 4; k++) {
         memset(&fc[k], 0, sizeof(fc[k]));
         char wd[14];
-        date_offset(k + 1, dates[k], sizeof(dates[k]), wd, sizeof(wd));
-        if (k == 0)      snprintf(fc[k].label, sizeof(fc[k].label), "Morgen");
-        else if (k == 1) snprintf(fc[k].label, sizeof(fc[k].label), "\xc3\x9c" "bermorgen");
+        date_offset(k, dates[k], sizeof(dates[k]), wd, sizeof(wd));
+        if (k == 0)      snprintf(fc[k].label, sizeof(fc[k].label), "Heute");
+        else if (k == 1) snprintf(fc[k].label, sizeof(fc[k].label), "Morgen");
+        else if (k == 2) snprintf(fc[k].label, sizeof(fc[k].label), "\xc3\x9c" "bermorgen");
         else             snprintf(fc[k].label, sizeof(fc[k].label), "%s", wd);
         fc[k].tmin = 999; fc[k].tmax = -999;
     }
-    int best_hd[3] = { 99, 99, 99 };   // Abstand zur Mittagszeit fuer die Beschreibung
+    int best_hd[4] = { 99, 99, 99, 99 };   // Abstand zur Mittagszeit fuer die Beschreibung
 
     cJSON *e;
     cJSON_ArrayForEach(e, list) {
@@ -179,7 +181,7 @@ static bool poll_forecast(void)
         cJSON *main = cJSON_GetObjectItem(e, "main");
         if (!cJSON_IsString(dt_txt) || !cJSON_IsObject(main)) continue;
         const char *dts = dt_txt->valuestring;   // "YYYY-MM-DD HH:MM:SS"
-        for (int k = 0; k < 3; k++) {
+        for (int k = 0; k < 4; k++) {
             if (strncmp(dts, dates[k], 10) != 0) continue;
             cJSON *tmn = cJSON_GetObjectItem(main, "temp_min");
             cJSON *tmx = cJSON_GetObjectItem(main, "temp_max");
@@ -204,12 +206,13 @@ static bool poll_forecast(void)
     }
     cJSON_Delete(root);
 
-    bool ok = fc[0].valid || fc[1].valid || fc[2].valid;
+    bool ok = fc[1].valid || fc[2].valid || fc[3].valid;
     xSemaphoreTake(s_lock, portMAX_DELAY);
     s_data.fc_valid = ok;
-    memcpy(s_data.fc, fc, sizeof(fc));
+    memcpy(s_data.fc, &fc[1], sizeof(owm_fc_day_t) * 3);   // morgen..+3 (Slide)
+    s_data.today = fc[0];                                  // heute (Zusammenfassung)
     xSemaphoreGive(s_lock);
-    ESP_LOGI(TAG, "Vorhersage aktualisiert (%d Tage)", fc[0].valid + fc[1].valid + fc[2].valid);
+    ESP_LOGI(TAG, "Vorhersage aktualisiert (%d Tage)", fc[1].valid + fc[2].valid + fc[3].valid);
     return ok;
 }
 

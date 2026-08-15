@@ -22,6 +22,8 @@ typedef struct {
 
     bool fc_valid;     // Vorhersage gueltig
     owm_fc_day_t fc[3];// morgen, uebermorgen, Tag danach
+    owm_fc_day_t today;// heutiger Tag (Min/Max + Mittags-Wetter); .valid separat,
+                       // nur fuer die Telegram-Tageszusammenfassung genutzt
 } owm_data_t;
 
 // Startet den Hintergrund-Poller (OpenWeatherMap, Johannesberg).
