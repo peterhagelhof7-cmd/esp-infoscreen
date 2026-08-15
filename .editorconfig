@@ -1,0 +1,13 @@
+root = true
+
+# Alle Quelldateien verbindlich UTF-8 (LF): erlaubt deutsche Umlaute direkt im
+# Code und verhindert, dass ein Editor/Linter die Datei umkodiert (Mojibake).
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{c,h}]
+indent_style = space
+indent_size = 4

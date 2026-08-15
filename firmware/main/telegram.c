@@ -237,14 +237,14 @@ static void send_daily_summary(void)
     owm_data_t d; owm_get(&d);
 
     char msg[400];
-    size_t o = snprintf(msg, sizeof(msg), "\xE2\x98\x80\xEF\xB8\x8F Guten Morgen! Deine Tages\xC3\xBCbersicht");
+    size_t o = snprintf(msg, sizeof(msg), "☀️ Guten Morgen! Deine Tagesübersicht");
     if (d.has_key && d.valid) {
         o += snprintf(msg + o, sizeof(msg) - o,
-            "\n\xF0\x9F\x8C\xA4 Jetzt: %d\xC2\xB0""C (gef\xC3\xBChlt %d), %s",
+            "\n🌤 Jetzt: %d°C (gefühlt %d), %s",
             d.temp, d.feels, d.desc[0] ? d.desc : "-");
         if (d.today.valid)
             o += snprintf(msg + o, sizeof(msg) - o,
-                "\nHeute: %d\xE2\x80\x93%d\xC2\xB0""C, %s",
+                "\nHeute: %d–%d°C, %s",
                 d.today.tmin, d.today.tmax, d.today.desc[0] ? d.today.desc : "-");
     } else {
         char w[160]; build_weather(w, sizeof(w));   // Spessart-Fallback ohne OWM-Key
