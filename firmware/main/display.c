@@ -1,5 +1,6 @@
 #include "display.h"
 #include "board_config.h"
+#include "config_store.h"   // bl_floor (Backlight-Untergrenze, panel-abhaengig)
 
 #include "driver/gpio.h"
 #include "driver/ledc.h"
@@ -10,15 +11,31 @@
 
 static const char *TAG = "display";
 
-#define BL_TIMER   LEDC_TIMER_0
-#define BL_CHANNEL LEDC_CHANNEL_0
-#define BL_RES     LEDC_TIMER_10_BIT   // 0..1023
+#define BL_TIMER    LEDC_TIMER_0
+#define BL_CHANNEL  LEDC_CHANNEL_0
+#define BL_RES      LEDC_TIMER_13_BIT   // 0..8191 (feinere Stufen im schmalen Fenster)
+#define BL_MAX_DUTY 8191
 
+// Backlight-Kennlinie dieses Sunton-Panels ist stark nichtlinear: unterhalb
+// einer Schwelle (~80-85 % Duty) bleibt es dunkel, die gesamte nutzbare
+// Helligkeit liegt in den obersten Prozent. Ein lineares Duty-Mapping laesst
+// darum fast den ganzen Slider wirkungslos. Deshalb den 0..100 %-Slider in das
+// NUTZBARE Fenster [floor .. max] abbilden. Die Untergrenze (floor) ist
+// panel-abhaengig und ueber die Config "bl_floor" (Duty-%) kalibrierbar.
 void display_set_brightness(int percent)
 {
     if (percent < 0) percent = 0;
     if (percent > 100) percent = 100;
-    uint32_t duty = (uint32_t)percent * 1023 / 100;
+
+    int floor_pct = config_get_int("bl_floor", 80);
+    if (floor_pct < 0) floor_pct = 0;
+    if (floor_pct > 95) floor_pct = 95;
+    uint32_t floor_duty = (uint32_t)floor_pct * BL_MAX_DUTY / 100;
+
+    uint32_t duty;
+    if (percent <= 0) duty = 0;   // ganz aus
+    else duty = floor_duty + (uint32_t)percent * (BL_MAX_DUTY - floor_duty) / 100;
+
     ledc_set_duty(LEDC_LOW_SPEED_MODE, BL_CHANNEL, duty);
     ledc_update_duty(LEDC_LOW_SPEED_MODE, BL_CHANNEL);
 }

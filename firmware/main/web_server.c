@@ -169,6 +169,7 @@ static esp_err_t settings_get(httpd_req_t *req)
 
     // --- Anzeige-Card: Helligkeit + Drehung + Slide-Auswahl + Intervall ---
     int bright = config_get_int("brightness", 100);
+    int bl_floor = config_get_int("bl_floor", 80);
     int slide_sec = config_get_int("slide_sec", 10);
     char rot[4]; bool rotated = config_get_str("rot180", rot, sizeof(rot)) && rot[0] == '1';
     snprintf(card, sizeof(card),
@@ -176,12 +177,14 @@ static esp_err_t settings_get(httpd_req_t *req)
         "<form method=post action=/brightness>"
         "<label>Helligkeit: %d%%</label>"
         "<input type=range name=b min=5 max=100 value=%d oninput=\"this.previousElementSibling.textContent='Helligkeit: '+this.value+'%%'\">"
+        "<label>Untergrenze (Duty %%, Panel-Kalibrierung): %d</label>"
+        "<input type=number name=floor min=0 max=95 value=%d>"
         "<button type=submit>\xc3\x9c" "bernehmen</button></form>"
         "<form method=post action=/display style='margin-top:8px'>"
         "<label style='display:flex;align-items:center;gap:10px'>"
         "<input type=checkbox name=rot value=1 %s style='width:auto'> Um 180&deg; drehen (Neustart)</label>"
         "<button type=submit>\xc3\x9c" "bernehmen</button></form>",
-        bright, bright, rotated ? "checked" : "");
+        bright, bright, bl_floor, bl_floor, rotated ? "checked" : "");
     httpd_resp_sendstr_chunk(req, card);
 
     httpd_resp_sendstr_chunk(req,
@@ -586,14 +589,22 @@ static esp_err_t brightness_post(httpd_req_t *req)
     int r = t > 0 ? httpd_req_recv(req, body, t) : 0;
     if (r < 0) return ESP_FAIL;
     body[r > 0 ? r : 0] = '\0';
-    char b[8] = { 0 };
+    char b[8] = { 0 }, fl[8] = { 0 };
+    // Untergrenze ZUERST setzen, damit display_set_brightness sie gleich nutzt.
+    if (form_field(body, "floor", fl, sizeof(fl))) {
+        int f = atoi(fl);
+        if (f < 0) f = 0;
+        if (f > 95) f = 95;
+        config_set_int("bl_floor", f);
+    }
+    int pct = config_get_int("brightness", 100);
     if (form_field(body, "b", b, sizeof(b))) {
-        int pct = atoi(b);
+        pct = atoi(b);
         if (pct < 5) pct = 5;
         if (pct > 100) pct = 100;
         config_set_int("brightness", pct);
-        display_set_brightness(pct);   // sofort anwenden
     }
+    display_set_brightness(pct);   // mit (ggf. neuer) Untergrenze anwenden
     return redirect_settings(req);
 }
 
