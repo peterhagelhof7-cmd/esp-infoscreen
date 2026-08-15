@@ -265,7 +265,7 @@ void planes_init(void)
     s_lock = xSemaphoreCreateMutex();
     s_poll_gate = xSemaphoreCreateMutex();
     memset(&s_data, 0, sizeof(s_data));
-    xTaskCreate(poll_task, "planes", 6144, NULL, 3, NULL);
+    xTaskCreate(poll_task, "planes", 8192, NULL, 3, NULL);   // JSON+TLS+Routen: 6144 war zu knapp (756 B frei)
 }
 
 void planes_refresh(void)

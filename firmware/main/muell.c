@@ -90,7 +90,7 @@ static void poll_task(void *arg)
 void muell_init(void)
 {
     s_lock = xSemaphoreCreateMutex();
-    xTaskCreate(poll_task, "muell", 7168, NULL, 3, &s_task);
+    xTaskCreate(poll_task, "muell", 8192, NULL, 3, &s_task);   // 7168 war knapp (1224 B frei)
 }
 
 void muell_refresh(void)

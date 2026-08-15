@@ -88,7 +88,7 @@ void spessart_init(void)
 {
     s_lock = xSemaphoreCreateMutex();
     memset(&s_data, 0, sizeof(s_data));
-    xTaskCreate(poll_task, "spessart", 7168, NULL, 3, NULL);
+    xTaskCreate(poll_task, "spessart", 6144, NULL, 3, NULL);   // gemessen ~2 KB Reserve
 }
 
 void spessart_get(spessart_data_t *out)

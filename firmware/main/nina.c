@@ -101,7 +101,7 @@ void nina_init(void)
 {
     s_lock = xSemaphoreCreateMutex();
     memset(&s_data, 0, sizeof(s_data));
-    xTaskCreate(poll_task, "nina", 7168, NULL, 3, &s_task);
+    xTaskCreate(poll_task, "nina", 6144, NULL, 3, &s_task);   // gemessen ~1,8 KB Reserve
 }
 
 void nina_get(nina_data_t *out)

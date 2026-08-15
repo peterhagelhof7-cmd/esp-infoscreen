@@ -131,7 +131,7 @@ void dht22_init(void)
     // Auf Core 1 (APP_CPU) pinnen: der Read sperrt kurz die Interrupts, und das
     // darf nur den Core treffen, der NICHT die RGB-Panel-ISR bedient (Core 0).
     // Sonst -> Artefakte. Siehe Kommentar in read_once().
-    xTaskCreatePinnedToCore(poll_task, "dht22", 3072, NULL, 3, NULL, 1);
+    xTaskCreatePinnedToCore(poll_task, "dht22", 2560, NULL, 3, NULL, 1);   // gemessen ~1,4 KB Reserve
 }
 
 void dht22_get(dht22_data_t *out)

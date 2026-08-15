@@ -243,7 +243,7 @@ void owm_init(void)
     s_lock = xSemaphoreCreateMutex();
     s_poll_gate = xSemaphoreCreateMutex();
     memset(&s_data, 0, sizeof(s_data));
-    xTaskCreate(poll_task, "owm", 7168, NULL, 3, NULL);
+    xTaskCreate(poll_task, "owm", 6144, NULL, 3, NULL);   // gemessen ~2,3 KB Reserve
 }
 
 void owm_refresh(void)
