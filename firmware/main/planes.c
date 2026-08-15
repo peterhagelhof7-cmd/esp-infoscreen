@@ -67,19 +67,32 @@ static void insert_sorted(plane_t *arr, int *cnt, const plane_t *p)
 
 // --- Routen-Cache (Callsign -> Start/Ziel via adsbdb.com) -------------------
 // ADS-B liefert keine Route. adsbdb.com gibt pro Callsign Start-/Zielflughafen
-// (IATA). Callsign->Route ist tagesstabil -> zwischenspeichern, damit nicht
-// jeder Poll erneut abfragt. Zugriff nur aus poll_once() (unter s_poll_gate).
+// mit Stadt (municipality). Callsign->Route ist tagesstabil -> zwischenspeichern,
+// damit nicht jeder Poll erneut abfragt. Zugriff nur aus poll_once() (s_poll_gate).
 #define ROUTE_URL   "https://api.adsbdb.com/v0/callsign/%s"
 #define ROUTE_CACHE 24
 
 typedef struct {
     char cs[10];        // Callsign
-    char from[5];       // IATA Start (leer = keine Route bekannt)
-    char to[5];         // IATA Ziel
+    char from[28];      // Start-Stadt (leer = keine Route bekannt)
+    char to[28];        // Ziel-Stadt
     bool done;          // Lookup schon versucht?
 } route_cache_t;
 static route_cache_t s_routes[ROUTE_CACHE];
 static int s_route_next;   // Ring-Einfuegeposition
+
+// Ortsnamen aus einem adsbdb origin/destination-Objekt: bevorzugt die Stadt
+// (municipality), sonst der IATA-Code.
+static void place_name(cJSON *obj, char *out, size_t len)
+{
+    if (!cJSON_IsObject(obj)) return;
+    cJSON *muni = cJSON_GetObjectItem(obj, "municipality");
+    cJSON *iata = cJSON_GetObjectItem(obj, "iata_code");
+    if (cJSON_IsString(muni) && muni->valuestring[0])
+        snprintf(out, len, "%s", muni->valuestring);
+    else if (cJSON_IsString(iata) && iata->valuestring[0])
+        snprintf(out, len, "%s", iata->valuestring);
+}
 
 static int route_find(const char *cs)
 {
@@ -109,12 +122,8 @@ static void route_fetch(const char *cs)
     if (cJSON_IsObject(resp)) {
         cJSON *fr = cJSON_GetObjectItem(resp, "flightroute");
         if (cJSON_IsObject(fr)) {
-            cJSON *o  = cJSON_GetObjectItem(fr, "origin");
-            cJSON *d  = cJSON_GetObjectItem(fr, "destination");
-            cJSON *oi = o ? cJSON_GetObjectItem(o, "iata_code") : NULL;
-            cJSON *di = d ? cJSON_GetObjectItem(d, "iata_code") : NULL;
-            if (cJSON_IsString(oi)) snprintf(slot->from, sizeof(slot->from), "%s", oi->valuestring);
-            if (cJSON_IsString(di)) snprintf(slot->to,   sizeof(slot->to),   "%s", di->valuestring);
+            place_name(cJSON_GetObjectItem(fr, "origin"),      slot->from, sizeof(slot->from));
+            place_name(cJSON_GetObjectItem(fr, "destination"), slot->to,   sizeof(slot->to));
         }
     }
     cJSON_Delete(root);

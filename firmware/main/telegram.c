@@ -441,18 +441,15 @@ static void cmd_planes(void)
     for (int i = 0; i < rows; i++) {
         const plane_t *a = &d.ac[i];
         const char *cs = a->flight[0] ? a->flight : (a->reg[0] ? a->reg : "?");
-        char alt[12];
-        if (a->alt_ft < 0)           snprintf(alt, sizeof(alt), "Boden");
-        else if (a->alt_ft >= 18000) snprintf(alt, sizeof(alt), "FL%03d", a->alt_ft / 100);
-        else                         snprintf(alt, sizeof(alt), "%dft", a->alt_ft);
-        char route[20] = "";
+        char route[64] = "";
         if (a->from[0] || a->to[0])
             snprintf(route, sizeof(route), " %s→%s", a->from[0] ? a->from : "?", a->to[0] ? a->to : "?");
-        o += snprintf(msg + o, sizeof(msg) - o, "\n%s%s%s%s  %s  %.0fnm",
+        // ohne Flughoehe (Platz fuer die Staedtenamen)
+        o += snprintf(msg + o, sizeof(msg) - o, "\n%s%s%s%s  %.0fnm",
                       cs, route,
                       a->type[0] ? " " : "", a->type,
-                      alt, a->dst_nm);
-        if (o > sizeof(msg) - 80) break;
+                      a->dst_nm);
+        if (o > sizeof(msg) - 90) break;
     }
     telegram_send(msg);
 }

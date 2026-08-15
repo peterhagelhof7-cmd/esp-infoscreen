@@ -21,8 +21,8 @@ typedef struct {
     int    gs_kt;       // Geschwindigkeit ueber Grund in Knoten (Feld "gs")
     int    track;       // Kurs ueber Grund in Grad (Feld "track"); -1 unbekannt
     double dst_nm;      // Entfernung vom Standort in nautischen Meilen
-    char   from[5];     // Start-Flughafen (IATA) via adsbdb; leer = unbekannt
-    char   to[5];       // Ziel-Flughafen (IATA)
+    char   from[28];    // Start-Stadt (adsbdb municipality, sonst IATA); leer = unbekannt
+    char   to[28];      // Ziel-Stadt
 } plane_t;
 
 typedef struct {

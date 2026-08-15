@@ -294,13 +294,6 @@ static const slide_t SLIDE_OWM = { "owm", "Wetter Johannesberg", owm_build, NULL
 // ========================= Slide: Flugzeuge ==================================
 // Naechste Flugzeuge ueber dem Standort (airplanes.live). Kopfzeile + Liste der
 // bis zu 6 naechsten Maschinen: Callsign, Typ, Hoehe, Entfernung, Kurs.
-static void alt_text(int alt_ft, char *out, size_t len)
-{
-    if (alt_ft < 0)            snprintf(out, len, "Boden");
-    else if (alt_ft >= 18000)  snprintf(out, len, "FL%03d", alt_ft / 100);
-    else                       snprintf(out, len, "%d ft", alt_ft);
-}
-
 static const char *compass(int track)
 {
     if (track < 0) return "";
@@ -350,7 +343,7 @@ static void planes_build(lv_obj_t *p)
         // Links: Callsign + Route (Font hat kein →/·, daher ">"). Breite gedeckelt
         // mit "..."-Kuerzung, damit die Zeile NIE in die rechte Spalte laeuft.
         const char *cs = a->flight[0] ? a->flight : (a->reg[0] ? a->reg : "?");
-        char left[28];
+        char left[64];
         if (a->from[0] || a->to[0])
             snprintf(left, sizeof(left), "%s  %s>%s", cs, a->from[0] ? a->from : "?", a->to[0] ? a->to : "?");
         else
@@ -358,17 +351,16 @@ static void planes_build(lv_obj_t *p)
         lv_obj_t *ll = lv_label_create(row);
         lv_obj_set_style_text_font(ll, FONT_MED, 0);
         lv_obj_set_style_text_color(ll, lv_color_hex(0xffffff), 0);
-        lv_obj_set_width(ll, 330);
+        lv_obj_set_width(ll, 470);
         lv_label_set_long_mode(ll, LV_LABEL_LONG_DOT);
         lv_label_set_text(ll, left);
         lv_obj_align(ll, LV_ALIGN_LEFT_MID, 0, 0);
 
-        // Rechts: Typ, Höhe, Entfernung, Kurs (Leerzeichen als Trenner).
-        char alt[12]; alt_text(a->alt_ft, alt, sizeof(alt));
+        // Rechts: Typ, Entfernung, Kurs (ohne Flughoehe -> Platz fuer die Staedte).
         char info[64];
         size_t io = 0;
         if (a->type[0]) io += snprintf(info + io, sizeof(info) - io, "%s   ", a->type);
-        io += snprintf(info + io, sizeof(info) - io, "%s   %.0f nm", alt, a->dst_nm);
+        io += snprintf(info + io, sizeof(info) - io, "%.0f nm", a->dst_nm);
         if (a->track >= 0)
             io += snprintf(info + io, sizeof(info) - io, "   %d° %s", a->track, compass(a->track));
         lv_obj_t *li = lv_label_create(row);
