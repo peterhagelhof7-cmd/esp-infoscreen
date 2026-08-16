@@ -13,6 +13,13 @@ static const char *TAG = "dht22";
 #define POLL_INTERVAL_MS (15 * 1000)   // DHT22 verlangt min. 2 s zwischen Messungen
 
 static dht22_data_t s_data;
+
+// Verlauf: ein Punkt alle 30 min (Ringpuffer, aeltester zuerst).
+#define HIST_INTERVAL_US (30LL * 60 * 1000000)
+static float   s_htemp[DHT22_HIST_LEN];
+static float   s_hhum[DHT22_HIST_LEN];
+static int     s_hcount;
+static int64_t s_last_hist_us;
 static SemaphoreHandle_t s_lock;
 
 // Wartet, bis die Leitung den angegebenen Pegel erreicht. Liefert die
@@ -102,6 +109,21 @@ static void poll_once(void)
     s_data.temp_c  = t;
     s_data.hum_pct = h;
     xSemaphoreGive(s_lock);
+
+    // Verlauf: sofort beim ersten Wert, danach alle 30 min anhaengen.
+    int64_t now = esp_timer_get_time();
+    if (s_hcount == 0 || now - s_last_hist_us >= HIST_INTERVAL_US) {
+        xSemaphoreTake(s_lock, portMAX_DELAY);
+        if (s_hcount < DHT22_HIST_LEN) {
+            s_htemp[s_hcount] = t; s_hhum[s_hcount] = h; s_hcount++;
+        } else {
+            memmove(s_htemp, s_htemp + 1, sizeof(float) * (DHT22_HIST_LEN - 1));
+            memmove(s_hhum,  s_hhum + 1,  sizeof(float) * (DHT22_HIST_LEN - 1));
+            s_htemp[DHT22_HIST_LEN - 1] = t; s_hhum[DHT22_HIST_LEN - 1] = h;
+        }
+        xSemaphoreGive(s_lock);
+        s_last_hist_us = now;
+    }
 }
 
 static void poll_task(void *arg)
@@ -132,6 +154,16 @@ void dht22_init(void)
     // darf nur den Core treffen, der NICHT die RGB-Panel-ISR bedient (Core 0).
     // Sonst -> Artefakte. Siehe Kommentar in read_once().
     xTaskCreatePinnedToCore(poll_task, "dht22", 2560, NULL, 3, NULL, 1);   // gemessen ~1,4 KB Reserve
+}
+
+int dht22_history_get(float *temp, float *hum, int max)
+{
+    if (!s_lock) return 0;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    int n = s_hcount < max ? s_hcount : max;
+    for (int i = 0; i < n; i++) { temp[i] = s_htemp[i]; hum[i] = s_hhum[i]; }
+    xSemaphoreGive(s_lock);
+    return n;
 }
 
 void dht22_get(dht22_data_t *out)

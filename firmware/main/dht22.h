@@ -13,3 +13,9 @@ typedef struct {
 
 void dht22_init(void);                    // GPIO konfigurieren + Poller-Task starten
 void dht22_get(dht22_data_t *out);        // letzten gueltigen Messwert liefern (Thread-sicher)
+
+// Verlauf: ein Datenpunkt alle 30 min, 5 h Fenster = 11 Punkte.
+#define DHT22_HIST_LEN 11
+// Kopiert die Verlaufswerte (aeltester zuerst) nach temp[]/hum[]; liefert die
+// Anzahl der gueltigen Punkte (<= max). Thread-sicher.
+int  dht22_history_get(float *temp, float *hum, int max);

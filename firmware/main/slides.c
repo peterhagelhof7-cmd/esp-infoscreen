@@ -798,6 +798,12 @@ static void spessart_build(lv_obj_t *p)
 static const slide_t SLIDE_SPESSART = { "spessart", "Spessartwetter", spessart_build, NULL };
 
 // ================= Slide 8: Innenraum (DHT22 an P4/GPIO18) ===================
+// Obere Haelfte: aktuelle Werte gross. Untere Haelfte: Verlaufsgraph (5 h,
+// Punkt alle 30 min): Temperatur (orange, linke Achse) + Luftfeuchte (blau,
+// rechte Achse).
+#define DHT_TCOL 0xff9d5c
+#define DHT_HCOL 0x5cc8ff
+
 static void innenraum_build(lv_obj_t *p)
 {
     dht22_data_t d; dht22_get(&d);
@@ -811,19 +817,91 @@ static void innenraum_build(lv_obj_t *p)
         return;
     }
 
+    // --- obere Haelfte: aktuelle Werte ---
     char t[24]; snprintf(t, sizeof(t), "%.1f \xc2\xb0""C", d.temp_c);
     lv_obj_t *lt = lv_label_create(p);
     lv_obj_set_style_text_font(lt, FONT_BIG, 0);
-    lv_obj_set_style_text_color(lt, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lt, lv_color_hex(DHT_TCOL), 0);
     lv_label_set_text(lt, t);
-    lv_obj_align(lt, LV_ALIGN_CENTER, 0, -40);
+    lv_obj_align(lt, LV_ALIGN_TOP_MID, -170, 40);
 
-    char h[24]; snprintf(h, sizeof(h), "%.0f %% Luftfeuchte", d.hum_pct);
+    char h[24]; snprintf(h, sizeof(h), "%.0f %%", d.hum_pct);
     lv_obj_t *lh = lv_label_create(p);
-    lv_obj_set_style_text_font(lh, FONT_MED, 0);
-    lv_obj_set_style_text_color(lh, lv_color_hex(0x8ab4f8), 0);
+    lv_obj_set_style_text_font(lh, FONT_BIG, 0);
+    lv_obj_set_style_text_color(lh, lv_color_hex(DHT_HCOL), 0);
     lv_label_set_text(lh, h);
-    lv_obj_align(lh, LV_ALIGN_CENTER, 0, 45);
+    lv_obj_align(lh, LV_ALIGN_TOP_MID, 170, 40);
+
+    lv_obj_t *cap = lv_label_create(p);
+    lv_obj_set_style_text_font(cap, FONT_SM, 0);
+    lv_obj_set_style_text_color(cap, lv_color_hex(0xb0b8d0), 0);
+    lv_label_set_text(cap, "Innenraum  \xe2\x80\x93  Temperatur / Luftfeuchte");
+    lv_obj_align(cap, LV_ALIGN_TOP_MID, 0, 130);
+
+    // --- untere Haelfte: Verlaufsgraph ---
+    static float ht[DHT22_HIST_LEN], hh[DHT22_HIST_LEN];   // static: nur LVGL-Task
+    int n = dht22_history_get(ht, hh, DHT22_HIST_LEN);
+    if (n < 2) {
+        lv_obj_t *note = lv_label_create(p);
+        lv_obj_set_style_text_font(note, FONT_MED, 0);
+        lv_obj_set_style_text_color(note, lv_color_hex(0xb0b8d0), 0);
+        lv_label_set_text(note, "Verlauf wird gesammelt (Punkt alle 30 min) ...");
+        lv_obj_align(note, LV_ALIGN_BOTTOM_MID, 0, -70);
+        return;
+    }
+
+    // Achsenbereiche aus den Daten (mit Rand).
+    float tmin = ht[0], tmax = ht[0], hmin = hh[0], hmax = hh[0];
+    for (int i = 1; i < n; i++) {
+        if (ht[i] < tmin) tmin = ht[i];
+        if (ht[i] > tmax) tmax = ht[i];
+        if (hh[i] < hmin) hmin = hh[i];
+        if (hh[i] > hmax) hmax = hh[i];
+    }
+    int tlo = (int)((tmin - 1.0f) * 10), thi = (int)((tmax + 1.0f) * 10);
+    if (thi - tlo < 20) thi = tlo + 20;   // min. 2 K Spanne
+    int hlo = (int)hmin - 5, hhi = (int)hmax + 5;
+    if (hlo < 0) hlo = 0;
+    if (hhi > 100) hhi = 100;
+    if (hhi - hlo < 10) hhi = hlo + 10;
+
+    lv_obj_t *chart = lv_chart_create(p);
+    lv_obj_set_size(chart, 720, 200);
+    lv_obj_align(chart, LV_ALIGN_BOTTOM_MID, 0, -46);
+    lv_obj_set_style_bg_color(chart, lv_color_hex(0x16203c), 0);
+    lv_obj_set_style_bg_opa(chart, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(chart, lv_color_hex(0x33406a), 0);
+    lv_obj_set_style_border_width(chart, 2, 0);
+    lv_obj_set_style_radius(chart, 8, 0);
+    lv_obj_set_style_line_color(chart, lv_color_hex(0x2a3556), LV_PART_MAIN);
+    lv_obj_set_style_line_width(chart, 3, LV_PART_ITEMS);        // Linienstaerke
+    lv_obj_set_style_width(chart, 6, LV_PART_INDICATOR);         // Punktgroesse
+    lv_obj_set_style_height(chart, 6, LV_PART_INDICATOR);
+    lv_chart_set_div_line_count(chart, 4, 6);
+    lv_chart_set_type(chart, LV_CHART_TYPE_LINE);
+    lv_chart_set_point_count(chart, n);
+    lv_chart_set_range(chart, LV_CHART_AXIS_PRIMARY_Y, tlo, thi);
+    lv_chart_set_range(chart, LV_CHART_AXIS_SECONDARY_Y, hlo, hhi);
+
+    lv_chart_series_t *st = lv_chart_add_series(chart, lv_color_hex(DHT_TCOL), LV_CHART_AXIS_PRIMARY_Y);
+    lv_chart_series_t *sh = lv_chart_add_series(chart, lv_color_hex(DHT_HCOL), LV_CHART_AXIS_SECONDARY_Y);
+    for (int i = 0; i < n; i++) {
+        lv_chart_set_next_value(chart, st, (int)(ht[i] * 10));
+        lv_chart_set_next_value(chart, sh, (int)(hh[i] + 0.5f));
+    }
+
+    // x-Achsen-Beschriftung
+    lv_obj_t *xl = lv_label_create(p);
+    lv_obj_set_style_text_font(xl, FONT_SM, 0);
+    lv_obj_set_style_text_color(xl, lv_color_hex(0x7a8290), 0);
+    char xtxt[24]; snprintf(xtxt, sizeof(xtxt), "vor %.1f h", (n - 1) * 0.5);
+    lv_label_set_text(xl, xtxt);
+    lv_obj_align(xl, LV_ALIGN_BOTTOM_LEFT, 44, -18);
+    lv_obj_t *xr = lv_label_create(p);
+    lv_obj_set_style_text_font(xr, FONT_SM, 0);
+    lv_obj_set_style_text_color(xr, lv_color_hex(0x7a8290), 0);
+    lv_label_set_text(xr, "jetzt");
+    lv_obj_align(xr, LV_ALIGN_BOTTOM_RIGHT, -44, -18);
 }
 
 static const slide_t SLIDE_INNENRAUM = { "innen", "Innenraum", innenraum_build, NULL };
