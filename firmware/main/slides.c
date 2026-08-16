@@ -835,7 +835,7 @@ static void innenraum_build(lv_obj_t *p)
     lv_obj_t *cap = lv_label_create(p);
     lv_obj_set_style_text_font(cap, FONT_SM, 0);
     lv_obj_set_style_text_color(cap, lv_color_hex(0xb0b8d0), 0);
-    lv_label_set_text(cap, "Innenraum  \xe2\x80\x93  Temperatur / Luftfeuchte");
+    lv_label_set_text(cap, "Innenraum  -  Temperatur / Luftfeuchte");
     lv_obj_align(cap, LV_ALIGN_TOP_MID, 0, 130);
 
     // --- untere Haelfte: Verlaufsgraph ---
