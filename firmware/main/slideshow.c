@@ -5,7 +5,7 @@
 #include "esp_timer.h"
 #include "esp_lvgl_port.h"
 
-#define MAX_SLIDES 12
+#define MAX_SLIDES 16
 
 static const slide_t *s_slides[MAX_SLIDES];
 static int s_count;

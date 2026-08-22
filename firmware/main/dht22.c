@@ -92,15 +92,23 @@ static bool read_once(float *temp_c, float *hum_pct)
 static void poll_once(void)
 {
     float t = 0, h = 0;
-    bool ok = read_once(&t, &h);
+    bool ok = false;
 
-    // Unplausible Werte (Fehl-Lesung ausserhalb des Sensorbereichs) verwerfen.
-    if (ok && (h < 0.0f || h > 100.0f || t < -40.0f || t > 80.0f)) {
-        ESP_LOGW(TAG, "unplausible Werte verworfen (%.1f C / %.1f %%)", t, h);
-        ok = false;
+    // Bis zu 3 Versuche pro Zyklus: ein einzelner DHT22-Read faellt gerne mal
+    // aus (Timing-/Leitungsstoerung, marginaler Kontakt). Zwischen den Versuchen
+    // die vom Sensor geforderten >= 2 s Pause -> sporadische Ausfaelle heilen
+    // sich selbst, statt sofort "Sensor nicht erreichbar" anzuzeigen.
+    for (int attempt = 0; attempt < 3 && !ok; attempt++) {
+        if (attempt) vTaskDelay(pdMS_TO_TICKS(2200));
+        ok = read_once(&t, &h);
+        // Unplausible Werte (Fehl-Lesung ausserhalb des Sensorbereichs) verwerfen.
+        if (ok && (h < 0.0f || h > 100.0f || t < -40.0f || t > 80.0f)) {
+            ESP_LOGW(TAG, "unplausible Werte verworfen (%.1f C / %.1f %%)", t, h);
+            ok = false;
+        }
     }
     if (!ok) {
-        ESP_LOGW(TAG, "Lesevorgang fehlgeschlagen");
+        ESP_LOGW(TAG, "Lesevorgang fehlgeschlagen (3 Versuche)");
         return;   // letzten gueltigen Wert behalten statt zu loeschen
     }
 
