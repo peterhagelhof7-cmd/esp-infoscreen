@@ -13,6 +13,7 @@
 #include "sysstatus.h"
 #include "dht22.h"
 #include "owm.h"
+#include "kurse.h"
 #include "planes.h"
 
 #include <string.h>
@@ -574,6 +575,22 @@ static void cmd_nacht(void)
     telegram_send(msg);
 }
 
+// "kurse": aktueller BTC-USD und EUR-USD mit 24h-Trendpfeil (System-Font -> echte Pfeile).
+static void cmd_kurse(void)
+{
+    kurse_data_t k; kurse_get(&k);
+    if (!k.valid) { telegram_send("\xF0\x9F\x92\xB1 Kurse noch nicht verf\xC3\xBCgbar."); return; }
+    static EXT_RAM_BSS_ATTR char msg[240];
+    const char *ab = k.btc_chg > 0.05 ? "\xE2\x86\x91" : (k.btc_chg < -0.05 ? "\xE2\x86\x93" : "\xE2\x86\x92");
+    const char *ae = k.eur_chg > 0.05 ? "\xE2\x86\x91" : (k.eur_chg < -0.05 ? "\xE2\x86\x93" : "\xE2\x86\x92");
+    snprintf(msg, sizeof(msg),
+        "\xF0\x9F\x92\xB1 Kurse (24h):\n"
+        "BTC-USD: %.0f $ %s %+.1f %%\n"
+        "EUR-USD: %.4f %s %+.2f %%",
+        k.btc_usd, ab, k.btc_chg, k.eur_usd, ae, k.eur_chg);
+    telegram_send(msg);
+}
+
 // Kommandoliste ausgeben.
 static void send_help(void)
 {
@@ -591,6 +608,7 @@ static void send_help(void)
         "\xE2\x80\xA2 stacks \xE2\x80\x93 Stack-Reserve je Task (Diagnose)\n"
         "\xE2\x80\xA2 alarm \xE2\x80\x93 aktive Warnungen (DWD/NINA/B\xC3\xB6""en)\n"
         "\xE2\x80\xA2 nacht \xE2\x80\x93 sichtbare Satelliten + Asteroiden\n"
+        "\xE2\x80\xA2 kurse \xE2\x80\x93 BTC-USD und EUR-USD (24h-Trend)\n"
         "\xE2\x80\xA2 kino \xE2\x80\x93 aktuelles Kinoprogramm\n"
         "\xE2\x80\xA2 kino preview \xE2\x80\x93 Programm ab n\xC3\xA4""chster Woche\n"
         "\xE2\x80\xA2 neu termin JJJJ-MM-TT Text \xE2\x80\x93 Termin anlegen",
@@ -664,6 +682,12 @@ static void handle_command(const char *text)
     // Nachtobjekte: sichtbare Satelliten-Ueberfluege + Asteroiden.
     if (contains_ci(low, "nacht")) {
         cmd_nacht();
+        return;
+    }
+
+    // Kurse: BTC-USD und EUR-USD mit 24h-Trend.
+    if (contains_ci(low, "kurse")) {
+        cmd_kurse();
         return;
     }
 

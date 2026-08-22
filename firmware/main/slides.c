@@ -13,6 +13,7 @@
 #include "owm.h"
 #include "planes.h"
 #include "space.h"
+#include "kurse.h"
 #include "telegram.h"
 #include "config_store.h"
 #include "fonts_de.h"
@@ -964,12 +965,107 @@ static void msgboard_build(lv_obj_t *p)
 
 static const slide_t SLIDE_MSGBOARD = { "msg", "Message Board", msgboard_build, msgboard_update };
 
+// ======================= Slide 10: Kurse (BTC / EUR-USD) ====================
+// BTC-USD und EUR-USD mit 24h-Trendpfeil. Der Font (montserrat_de) hat keine
+// Pfeil-Glyphen -> der Pfeil wird als kleines Dreieck gezeichnet. Die Punkt-
+// Arrays sind static const (Programmlebensdauer) -> das Zeiger-Lebensdauer-
+// Problem von lv_line mit Stack-Arrays greift hier nicht.
+static const lv_point_precise_t ARROW_UP[]   = { {0, 17}, {14, 0}, {28, 17} };
+static const lv_point_precise_t ARROW_DOWN[] = { {0, 0}, {14, 17}, {28, 0} };
+static const lv_point_precise_t ARROW_FLAT[] = { {0, 9}, {28, 9} };
+
+static void trend_arrow(lv_obj_t *p, int xo, int yo, double chg)
+{
+    const lv_point_precise_t *pts; uint32_t np, col;
+    if      (chg >  0.05) { pts = ARROW_UP;   np = 3; col = 0x43d17a; }
+    else if (chg < -0.05) { pts = ARROW_DOWN; np = 3; col = 0xef6b6b; }
+    else                  { pts = ARROW_FLAT; np = 2; col = 0x8a92a6; }
+    lv_obj_t *ln = lv_line_create(p);
+    lv_line_set_points(ln, pts, np);
+    lv_obj_set_style_line_width(ln, 7, 0);
+    lv_obj_set_style_line_rounded(ln, true, 0);
+    lv_obj_set_style_line_color(ln, lv_color_hex(col), 0);
+    lv_obj_align(ln, LV_ALIGN_RIGHT_MID, xo, yo);
+}
+
+// Ganzzahl mit Tausenderpunkt (deutsch): 98765 -> "98.765".
+static void group_de(long v, char *out, size_t n)
+{
+    char digits[24];
+    int neg = (v < 0);
+    unsigned long uv = neg ? (unsigned long)(-v) : (unsigned long)v;
+    int dl = snprintf(digits, sizeof(digits), "%lu", uv);
+    char res[32]; int ri = (int)sizeof(res); res[--ri] = '\0';
+    for (int i = dl - 1, cnt = 0; i >= 0 && ri > 0; i--, cnt++) {
+        if (cnt && cnt % 3 == 0 && ri > 0) res[--ri] = '.';
+        res[--ri] = digits[i];
+    }
+    if (neg && ri > 0) res[--ri] = '-';
+    snprintf(out, n, "%s", &res[ri]);
+}
+
+static void kurse_row(lv_obj_t *p, int cy, const char *name, const char *value, double chg)
+{
+    lv_obj_t *ln = lv_label_create(p);
+    lv_obj_set_style_text_font(ln, FONT_MED, 0);
+    lv_obj_set_style_text_color(ln, lv_color_hex(0x8ab4f8), 0);
+    lv_label_set_text(ln, name);
+    lv_obj_align(ln, LV_ALIGN_LEFT_MID, 48, cy - 32);
+
+    lv_obj_t *lv = lv_label_create(p);
+    lv_obj_set_style_text_font(lv, FONT_BIG, 0);
+    lv_obj_set_style_text_color(lv, lv_color_hex(0xffffff), 0);
+    lv_label_set_text(lv, value);
+    lv_obj_align(lv, LV_ALIGN_LEFT_MID, 48, cy + 14);
+
+    uint32_t col = chg > 0.05 ? 0x43d17a : (chg < -0.05 ? 0xef6b6b : 0x8a92a6);
+    char c[16]; snprintf(c, sizeof(c), "%+.2f %%", chg);
+    for (char *q = c; *q; q++) if (*q == '.') *q = ',';
+    lv_obj_t *lc = lv_label_create(p);
+    lv_obj_set_style_text_font(lc, FONT_MED, 0);
+    lv_obj_set_style_text_color(lc, lv_color_hex(col), 0);
+    lv_label_set_text(lc, c);
+    lv_obj_align(lc, LV_ALIGN_RIGHT_MID, -40, cy);
+
+    trend_arrow(p, -190, cy, chg);
+}
+
+static void kurse_build(lv_obj_t *p)
+{
+    kurse_data_t k; kurse_get(&k);
+
+    lv_obj_t *hdr = lv_label_create(p);
+    lv_obj_set_style_text_font(hdr, FONT_SM, 0);
+    lv_obj_set_style_text_color(hdr, lv_color_hex(0xb0b8d0), 0);
+    lv_label_set_text(hdr, "Kurse  -  24h-Trend");
+    lv_obj_align(hdr, LV_ALIGN_TOP_MID, 0, 8);
+
+    if (!k.valid) {
+        lv_obj_t *l = lv_label_create(p);
+        lv_obj_set_style_text_font(l, FONT_MED, 0);
+        lv_obj_set_style_text_color(l, lv_color_hex(0xb0b8d0), 0);
+        lv_label_set_text(l, "Kurse werden geladen ...");
+        lv_obj_center(l);
+        return;
+    }
+
+    char btc[24]; group_de((long)(k.btc_usd + 0.5), btc, sizeof(btc));
+    char btcv[32]; snprintf(btcv, sizeof(btcv), "%s $", btc);
+    kurse_row(p, -80, "BTC-USD", btcv, k.btc_chg);
+
+    char eur[16]; snprintf(eur, sizeof(eur), "%.4f", k.eur_usd);
+    for (char *q = eur; *q; q++) if (*q == '.') *q = ',';
+    kurse_row(p, 80, "EUR-USD", eur, k.eur_chg);
+}
+
+static const slide_t SLIDE_KURSE = { "kurse", "Kurse", kurse_build, NULL };
+
 // ============================================================================
 // Katalog aller Slides (Reihenfolge = Anzeigereihenfolge).
 static const slide_t *ALL_SLIDES[] = {
     &SLIDE_CLOCK, &SLIDE_OWM, &SLIDE_PLANES, &SLIDE_NIGHT, &SLIDE_CALENDAR, &SLIDE_DWD,
-    &SLIDE_SPESSART, &SLIDE_INNENRAUM, &SLIDE_FRITZBOX, &SLIDE_NETWORK, &SLIDE_WIFI,
-    &SLIDE_MSGBOARD,
+    &SLIDE_SPESSART, &SLIDE_INNENRAUM, &SLIDE_KURSE, &SLIDE_FRITZBOX, &SLIDE_NETWORK,
+    &SLIDE_WIFI, &SLIDE_MSGBOARD,
 };
 #define N_SLIDES (int)(sizeof(ALL_SLIDES) / sizeof(ALL_SLIDES[0]))
 

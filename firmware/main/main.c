@@ -19,6 +19,7 @@
 #include "telegram.h"
 #include "kino.h"
 #include "dht22.h"
+#include "kurse.h"
 
 #include <stdlib.h>
 #include "esp_log.h"
@@ -79,6 +80,7 @@ void app_main(void)
     space_init();      // Nachtobjekte: Satelliten (N2YO) + Asteroiden (NeoWs)
     termine_init();    // Auto-Aufraeumung vergangener Termine
     dht22_init();      // Innenraumsensor (P4, GPIO18)
+    kurse_init();      // Kurse: BTC-USD + EUR-USD (CoinGecko)
 
     // Slideshow aufbauen: Uhr/Datum, Netzwerk, WLAN-Empfang - alle 10 s wechseln
     slideshow_init(disp);

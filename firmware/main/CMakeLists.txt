@@ -24,6 +24,7 @@ idf_component_register(
         "nina.c"
         "kino.c"
         "dht22.c"
+        "kurse.c"
         "fonts/montserrat_de_14.c"
         "fonts/montserrat_de_28.c"
         "fonts/montserrat_de_48.c"
