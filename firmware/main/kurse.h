@@ -2,11 +2,11 @@
 #include <stdbool.h>
 
 // Kurse-Poller: Bitcoin (BTC-EUR) und EUR-USD, Basis immer Euro.
-// Quelle: Coinbase exchange-rates (keyless, kein Rate-Limit-Problem). Ein Aufruf
-// liefert EUR->USD und EUR->BTC; BTC-EUR = 1/rate(BTC). Die 24h-Aenderung liefert
-// Coinbase nicht mit, daher wird sie geraeteseitig aus stuendlichen Snapshots
-// selbst berechnet (Baseline ~24h alt). Nach einem Neustart ist der Trend erst
-// wieder aussagekraeftig, sobald 24h Historie vorliegt (bis dahin has_trend=false).
+// Quelle: Bitstamp Public-Ticker (DigiCert-Zertifikat -> vom ESP-crt_bundle
+// verifizierbar, keyless, hohes Rate-Limit). Zwei Abrufe (btceur + btcusd), je
+// mit last + open_24 + percent_change_24, liefern sofort echte 24h-Werte:
+// BTC-EUR direkt, EUR-USD als BTC-Cross (btcusd/btceur). has_trend ist daher
+// gueltig, sobald valid (kein 24h-Warmup wie beim frueheren Selbst-Tracking).
 
 typedef struct {
     bool   valid;
