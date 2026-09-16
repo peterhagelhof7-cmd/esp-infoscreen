@@ -12,6 +12,7 @@
 #include "owm.h"
 #include "planes.h"
 #include "space.h"
+#include "logbuf.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -440,6 +441,8 @@ static esp_err_t settings_get(httpd_req_t *req)
         "<div class=card style='margin-top:16px'><h1>System</h1>"
         "<a href=/config/download style='display:block;text-align:center;padding:12px;margin-top:8px;"
         "border-radius:8px;background:#3b6ef0;color:#fff;text-decoration:none'>Einstellungen herunterladen</a>"
+        "<a href=/log/download style='display:block;text-align:center;padding:12px;margin-top:8px;"
+        "border-radius:8px;background:#5a6478;color:#fff;text-decoration:none'>Log herunterladen</a>"
         "<label>Einstellungen laden (.json)</label>"
         "<input type=file id=cf accept='.json,application/json'>"
         "<button onclick='cu()'>Hochladen &amp; Neustart</button>"
@@ -684,6 +687,18 @@ static esp_err_t configdl_get(httpd_req_t *req)
     if (n < 0) { httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Export fehlgeschlagen"); return ESP_OK; }
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Content-Disposition", "attachment; filename=\"esp-infoscreen-config.json\"");
+    httpd_resp_send(req, buf, n);
+    return ESP_OK;
+}
+
+// Log-Ringpuffer (ESP_LOG-Mitschnitt) als Textdatei herunterladen.
+static esp_err_t logdl_get(httpd_req_t *req)
+{
+    static EXT_RAM_BSS_ATTR char buf[16385];   // PSRAM
+    size_t n = logbuf_get(buf, sizeof(buf) - 1);
+    httpd_resp_set_type(req, "text/plain; charset=utf-8");
+    httpd_resp_set_hdr(req, "Content-Disposition", "attachment; filename=\"esp-infoscreen-log.txt\"");
+    if (n == 0) { httpd_resp_sendstr(req, "(Log noch leer)"); return ESP_OK; }
     httpd_resp_send(req, buf, n);
     return ESP_OK;
 }
@@ -961,7 +976,7 @@ void web_server_start(void)
     // 8192 reicht: die grossen Settings-Puffer (aps/te) sind static, nicht auf
     // dem Handler-Stack. Kleinerer Block passt auch bei fragmentiertem Heap.
     cfg.stack_size = 8192;
-    cfg.max_uri_handlers = 28;
+    cfg.max_uri_handlers = 30;
     httpd_handle_t server = NULL;
     // httpd_start kann beim Boot transient scheitern (interner RAM durch WiFi-Init
     // gerade knapp / TCP-IP noch nicht bereit) -> mehrfach versuchen, Fehler loggen.
@@ -995,6 +1010,7 @@ void web_server_start(void)
     httpd_uri_t brg  = { .uri = "/brightness", .method = HTTP_POST, .handler = brightness_post };
     httpd_uri_t sld  = { .uri = "/slides", .method = HTTP_POST, .handler = slides_post };
     httpd_uri_t cdl  = { .uri = "/config/download", .method = HTTP_GET, .handler = configdl_get };
+    httpd_uri_t ldl  = { .uri = "/log/download", .method = HTTP_GET, .handler = logdl_get };
     httpd_uri_t cul  = { .uri = "/config/upload", .method = HTTP_POST, .handler = configul_post };
     httpd_uri_t rbt  = { .uri = "/reboot", .method = HTTP_POST, .handler = reboot_post };
     httpd_uri_t fac  = { .uri = "/factory", .method = HTTP_POST, .handler = factory_post };
@@ -1020,6 +1036,7 @@ void web_server_start(void)
     httpd_register_uri_handler(server, &brg);
     httpd_register_uri_handler(server, &sld);
     httpd_register_uri_handler(server, &cdl);
+    httpd_register_uri_handler(server, &ldl);
     httpd_register_uri_handler(server, &cul);
     httpd_register_uri_handler(server, &rbt);
     httpd_register_uri_handler(server, &fac);

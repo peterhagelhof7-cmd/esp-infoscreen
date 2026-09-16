@@ -11,6 +11,7 @@ idf_component_register(
         "ota_manager.c"
         "fritzbox.c"
         "http_util.c"
+        "logbuf.c"
         "muell.c"
         "termine.c"
         "dwd.c"

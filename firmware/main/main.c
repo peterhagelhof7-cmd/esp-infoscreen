@@ -8,6 +8,7 @@
 #include "ota_manager.h"
 #include "fritzbox.h"
 #include "http_util.h"
+#include "logbuf.h"
 #include "muell.h"
 #include "termine.h"
 #include "dwd.h"
@@ -41,6 +42,7 @@ static void *json_psram_malloc(size_t sz)
 
 void app_main(void)
 {
+    logbuf_init();   // ESP_LOG-Mitschnitt ins PSRAM (Download ueber /log/download), zuerst
     ESP_LOGI(TAG, "esp-infoscreen startet");
     ESP_LOGI(TAG, "PSRAM: %u Bytes", (unsigned)esp_psram_get_size());
 
