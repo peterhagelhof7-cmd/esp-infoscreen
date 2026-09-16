@@ -50,6 +50,8 @@ static bool     s_boe_warned;     // Boeen-Warnung aktiv (Hysterese gg. Spam)
 #define BOE_WARN_KMH 50.0         // Schwelle fuer die Boeen-Warnung
 static int      s_summary_yday = -2;  // Tag (tm_yday) der letzten Tageszusammenfassung; -2 = Zeit noch nie gesehen
 #define SUMMARY_HOUR 6            // Uhrzeit der taeglichen Zusammenfassung (lokal)
+static int      s_kino_sun_yday = -2; // Tag des letzten Sonntags-Kino-Push; -2 = Zeit noch nie gesehen
+#define KINO_SUNDAY_HOUR 10       // Uhrzeit des Sonntags-Kino-Push (lokal)
 
 // --- kleine Helfer ----------------------------------------------------------
 static void tolower_str(char *s)
@@ -329,6 +331,28 @@ static void check_daily_summary(void)
     }
 }
 
+// Sonntags einmal (ab KINO_SUNDAY_HOUR) das aktuelle Kinoprogramm in den Kanal
+// pushen. Gleiche Nachhol-Vermeidung wie check_daily_summary: ist der erste
+// gueltige Zeitpunkt schon ein Sonntag nach der Push-Zeit, gilt er als erledigt.
+static void check_kino_sunday(void)
+{
+    time_t now = time(NULL);
+    struct tm tm; localtime_r(&now, &tm);
+    if (tm.tm_year <= 120) return;   // keine gueltige Zeit (NTP fehlt)
+
+    if (s_kino_sun_yday == -2) {
+        s_kino_sun_yday = (tm.tm_wday == 0 && tm.tm_hour >= KINO_SUNDAY_HOUR) ? tm.tm_yday : -1;
+        return;
+    }
+    if (tm.tm_wday == 0 && tm.tm_hour >= KINO_SUNDAY_HOUR && tm.tm_yday != s_kino_sun_yday) {
+        kino_refresh_if_due();   // sicherstellen, dass das Programm geladen ist
+        static EXT_RAM_BSS_ATTR char kb[720];
+        kino_build_current(kb, sizeof(kb));
+        telegram_send(kb);
+        s_kino_sun_yday = tm.tm_yday;
+    }
+}
+
 // --- Befehle ----------------------------------------------------------------
 // Datum formatieren ueber Zeiger (kein format-truncation-Check auf feste Groesse).
 static void fmt_date(char *out, size_t n, int y, int m, int d)
@@ -575,19 +599,28 @@ static void cmd_nacht(void)
     telegram_send(msg);
 }
 
-// "kurse": aktueller BTC-USD und EUR-USD mit 24h-Trendpfeil (System-Font -> echte Pfeile).
+// "kurse": BTC-EUR und EUR-USD (Basis Euro) mit 24h-Trendpfeil (selbst gemerkt).
 static void cmd_kurse(void)
 {
     kurse_data_t k; kurse_get(&k);
     if (!k.valid) { telegram_send("\xF0\x9F\x92\xB1 Kurse noch nicht verf\xC3\xBCgbar."); return; }
     static EXT_RAM_BSS_ATTR char msg[240];
-    const char *ab = k.btc_chg > 0.05 ? "\xE2\x86\x91" : (k.btc_chg < -0.05 ? "\xE2\x86\x93" : "\xE2\x86\x92");
-    const char *ae = k.eur_chg > 0.05 ? "\xE2\x86\x91" : (k.eur_chg < -0.05 ? "\xE2\x86\x93" : "\xE2\x86\x92");
-    snprintf(msg, sizeof(msg),
-        "\xF0\x9F\x92\xB1 Kurse (24h):\n"
-        "BTC-USD: %.0f $ %s %+.1f %%\n"
-        "EUR-USD: %.4f %s %+.2f %%",
-        k.btc_usd, ab, k.btc_chg, k.eur_usd, ae, k.eur_chg);
+    if (k.has_trend) {
+        const char *ab = k.btc_chg > 0.05 ? "\xE2\x86\x91" : (k.btc_chg < -0.05 ? "\xE2\x86\x93" : "\xE2\x86\x92");
+        const char *ae = k.eur_chg > 0.05 ? "\xE2\x86\x91" : (k.eur_chg < -0.05 ? "\xE2\x86\x93" : "\xE2\x86\x92");
+        snprintf(msg, sizeof(msg),
+            "\xF0\x9F\x92\xB1 Kurse (24h):\n"
+            "1 BTC: %.0f \xE2\x82\xAC %s %+.1f %%\n"
+            "1 EUR: %.4f $ %s %+.2f %%",
+            k.btc_eur, ab, k.btc_chg, k.eur_usd, ae, k.eur_chg);
+    } else {
+        snprintf(msg, sizeof(msg),
+            "\xF0\x9F\x92\xB1 Kurse:\n"
+            "1 BTC: %.0f \xE2\x82\xAC\n"
+            "1 EUR: %.4f $\n"
+            "(24h-Trend nach ~24h Laufzeit)",
+            k.btc_eur, k.eur_usd);
+    }
     telegram_send(msg);
 }
 
@@ -871,7 +904,12 @@ static void poll_task(void *arg)
         check_nina();
         check_boe();
         check_daily_summary();   // Morgen-Zusammenfassung 1x/Tag um SUMMARY_HOUR
+        check_kino_sunday();     // Sonntags 1x das Kinoprogramm in den Kanal
         kino_refresh_if_due();   // Kinoprogramm hoechstens 1x pro Kalendertag laden
+        { // Download-Wächter: meldet Quellen, die >1h durchgehend fehlschlagen
+            static EXT_RAM_BSS_ATTR char hb[400];
+            if (httphealth_alert(hb, sizeof(hb))) telegram_send(hb);
+        }
         // 10 s statt 4 s: deutlich seltenere TLS-Handshakes -> weniger PSRAM-
         // Bandbreiten-Spitzen, die die RGB-DMA stoeren (Display-Artefakte).
         // Bot-Kommandos werden dadurch max. ~10 s spaeter beantwortet.

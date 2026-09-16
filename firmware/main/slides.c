@@ -1049,13 +1049,14 @@ static void kurse_build(lv_obj_t *p)
         return;
     }
 
-    char btc[24]; group_de((long)(k.btc_usd + 0.5), btc, sizeof(btc));
-    char btcv[32]; snprintf(btcv, sizeof(btcv), "%s $", btc);
-    kurse_row(p, -80, "BTC-USD", btcv, k.btc_chg);
+    char btc[24]; group_de((long)(k.btc_eur + 0.5), btc, sizeof(btc));
+    char btcv[32]; snprintf(btcv, sizeof(btcv), "%s EUR", btc);
+    kurse_row(p, -80, "BTC-EUR", btcv, k.has_trend ? k.btc_chg : 0.0);
 
     char eur[16]; snprintf(eur, sizeof(eur), "%.4f", k.eur_usd);
     for (char *q = eur; *q; q++) if (*q == '.') *q = ',';
-    kurse_row(p, 80, "EUR-USD", eur, k.eur_chg);
+    char eurv[24]; snprintf(eurv, sizeof(eurv), "%s $", eur);
+    kurse_row(p, 80, "EUR-USD", eurv, k.has_trend ? k.eur_chg : 0.0);
 }
 
 static const slide_t SLIDE_KURSE = { "kurse", "Kurse", kurse_build, NULL };
