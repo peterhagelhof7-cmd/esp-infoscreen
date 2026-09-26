@@ -29,6 +29,7 @@
 #include "esp_timer.h"
 #include "esp_attr.h"
 #include "esp_log.h"
+#include "esp_system.h"
 
 static const char *TAG = "telegram";
 #define API "https://api.telegram.org/bot"
@@ -50,6 +51,7 @@ static bool     s_boe_warned;     // Boeen-Warnung aktiv (Hysterese gg. Spam)
 #define BOE_WARN_KMH 50.0         // Schwelle fuer die Boeen-Warnung
 static int      s_summary_yday = -2;  // Tag (tm_yday) der letzten Tageszusammenfassung; -2 = Zeit noch nie gesehen
 #define SUMMARY_HOUR 6            // Uhrzeit der taeglichen Zusammenfassung (lokal)
+#define TG_TERMINE 5              // Anzahl Termine (Zusammenfassung + Kommando "termin")
 static int      s_kino_sun_yday = -2; // Tag des letzten Sonntags-Kino-Push; -2 = Zeit noch nie gesehen
 #define KINO_SUNDAY_HOUR 10       // Uhrzeit des Sonntags-Kino-Push (lokal)
 
@@ -143,15 +145,24 @@ bool telegram_send(const char *text)
     char token[64], chat[32];
     if (!get_token(token, sizeof(token)) || !get_chat(chat, sizeof(chat))) return false;
 
-    char enc[1024];
-    urlencode(text, enc, sizeof(enc));
-    static EXT_RAM_BSS_ATTR char url[1400];   // PSRAM (spart internen RAM)
-    snprintf(url, sizeof(url), "%s%s/sendMessage?chat_id=%s&text=%s", API, token, chat, enc);
-
-    static EXT_RAM_BSS_ATTR char resp[512];   // PSRAM
-    int n = http_get(url, resp, sizeof(resp));
-    if (n <= 0) { ESP_LOGW(TAG, "sendMessage fehlgeschlagen"); return false; }
-    return true;
+    // Puffer pro Aufruf im PSRAM: telegram_send laeuft aus Telegram- UND
+    // httpd-Task -> kein static (Race), und kein Stack (TLS braucht ihn).
+    // ENC_LEN reicht fuer ~2 KB kodierten Text (z.B. Zusammenfassung mit 5 Terminen).
+    enum { ENC_LEN = 2048, URL_LEN = ENC_LEN + 160, RESP_LEN = 512 };
+    char *enc  = heap_caps_malloc(ENC_LEN,  MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    char *url  = heap_caps_malloc(URL_LEN,  MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    char *resp = heap_caps_malloc(RESP_LEN, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    bool ok = false;
+    if (enc && url && resp) {
+        urlencode(text, enc, ENC_LEN);
+        snprintf(url, URL_LEN, "%s%s/sendMessage?chat_id=%s&text=%s", API, token, chat, enc);
+        ok = http_get(url, resp, RESP_LEN) > 0;
+        if (!ok) ESP_LOGW(TAG, "sendMessage fehlgeschlagen");
+    } else {
+        ESP_LOGW(TAG, "sendMessage: kein PSRAM-Puffer");
+    }
+    free(enc); free(url); free(resp);
+    return ok;
 }
 
 // --- Antwort-Bausteine (UTF-8, mit Umlauten) --------------------------------
@@ -180,8 +191,8 @@ static void build_internet(char *out, size_t len)
         (unsigned)(up10 / 10), (unsigned)(up10 % 10), (unsigned)upmax);
 }
 
-// naechste zwei Termine (Nutzer-Termine + Muellabfuhr), nach Datum sortiert
-static void build_termine(char *out, size_t len)
+// naechste `max` Termine (Nutzer-Termine + Muellabfuhr + Feiertage), nach Datum sortiert
+static void build_termine(char *out, size_t len, int max)
 {
     // static: build_termine laeuft nur im Telegram-Task (nicht reentrant) ->
     // haelt den Task-Stack frei (grosse Arrays sonst = Stack-Overflow).
@@ -222,7 +233,7 @@ static void build_termine(char *out, size_t len)
             if (strcmp(ev[j].date, ev[i].date) < 0) { ev_t t = ev[i]; ev[i] = ev[j]; ev[j] = t; }
 
     if (n == 0) { snprintf(out, len, "\xF0\x9F\x93\x85 Keine Termine."); return; }
-    int show = n < 2 ? n : 2;
+    int show = n < max ? n : max;
     size_t o = snprintf(out, len, "\xF0\x9F\x93\x85 N\xC3\xA4""chste Termine:");
     for (int i = 0; i < show && o < len; i++) {
         int yy = 0, mm = 0, dd = 0;
@@ -308,7 +319,9 @@ static void send_daily_summary(void)
         o += snprintf(msg + o, sizeof(msg) - o, "\n%s", fl);
     telegram_send(msg);
 
-    char t[240]; build_termine(t, sizeof(t));   // naechste Termine + Muellabfuhr
+    // naechste TG_TERMINE Termine + Muellabfuhr; static/PSRAM: Stack frei
+    static EXT_RAM_BSS_ATTR char t[512];
+    build_termine(t, sizeof(t), TG_TERMINE);
     telegram_send(t);
 }
 
@@ -636,9 +649,10 @@ static void send_help(void)
         "\xE2\x80\xA2 feiertag \xE2\x80\x93 n\xC3\xA4""chste Feiertage\n"
         "\xE2\x80\xA2 innen \xE2\x80\x93 Innenraum-Temperatur/-Feuchte (DHT22)\n"
         "\xE2\x80\xA2 internet \xE2\x80\x93 Internet-/Fritzbox-Daten\n"
-        "\xE2\x80\xA2 termin \xE2\x80\x93 die n\xC3\xA4""chsten 2 Termine\n"
+        "\xE2\x80\xA2 termin \xE2\x80\x93 die n\xC3\xA4""chsten 5 Termine\n"
         "\xE2\x80\xA2 status \xE2\x80\x93 Uptime / Heap / WLAN\n"
         "\xE2\x80\xA2 stacks \xE2\x80\x93 Stack-Reserve je Task (Diagnose)\n"
+        "\xE2\x80\xA2 reboot \xE2\x80\x93 Infoscreen neu starten\n"
         "\xE2\x80\xA2 alarm \xE2\x80\x93 aktive Warnungen (DWD/NINA/B\xC3\xB6""en)\n"
         "\xE2\x80\xA2 nacht \xE2\x80\x93 sichtbare Satelliten + Asteroiden\n"
         "\xE2\x80\xA2 kurse \xE2\x80\x93 BTC-USD und EUR-USD (24h-Trend)\n"
@@ -724,7 +738,16 @@ static void handle_command(const char *text)
         return;
     }
 
-    static EXT_RAM_BSS_ATTR char reply[560]; bool any = false;   // PSRAM, static
+    // Neustart. Kein Replay-Loop: der Startabgleich nach dem Boot konsumiert
+    // dieses Update ohne Ausfuehrung (process=false). "Wieder da!" bestaetigt.
+    if (contains_ci(low, "reboot")) {
+        ESP_LOGW(TAG, "Neustart per Bot-Kommando");
+        telegram_send("\xF0\x9F\x94\x84 Starte neu \xE2\x80\xA6");
+        vTaskDelay(pdMS_TO_TICKS(1000));   // Log/Netz kurz ausklingen lassen
+        esp_restart();
+    }
+
+    static EXT_RAM_BSS_ATTR char reply[1024]; bool any = false;  // PSRAM, static (Platz fuer 5 Termine + weitere Bausteine)
     reply[0] = '\0'; size_t o = 0;
     if (contains_ci(low, "wetter")) {
         char b[160]; build_weather(b, sizeof(b));
@@ -739,7 +762,8 @@ static void handle_command(const char *text)
         o += snprintf(reply + o, sizeof(reply) - o, "%s%s", any ? "\n" : "", b); any = true;
     }
     if (contains_ci(low, "termin")) {
-        char b[200]; build_termine(b, sizeof(b));
+        static EXT_RAM_BSS_ATTR char b[512];   // 5 Termine; static/PSRAM: Stack frei
+        build_termine(b, sizeof(b), TG_TERMINE);
         o += snprintf(reply + o, sizeof(reply) - o, "%s%s", any ? "\n" : "", b); any = true;
     }
     if (contains_ci(low, "status")) {
