@@ -99,7 +99,7 @@ static esp_err_t settings_get(httpd_req_t *req)
 
     // Netze scannen (bis 16). static: HTTP-Handler laufen alle im EINEN Server-
     // Task (sequenziell) -> spart Stack (sonst Stack-Overflow der Seite).
-    static net_ap_t aps[16];
+    static EXT_RAM_BSS_ATTR net_ap_t aps[16];   // PSRAM (spart internen RAM)
     int n = network_manager_scan(aps, 16);
     ESP_LOGI(TAG, "Einstellungsseite: %d Netze im Dropdown", n);
 
@@ -211,7 +211,7 @@ static esp_err_t settings_get(httpd_req_t *req)
         "<div class=card style='margin-top:16px'><h1>Termine</h1>"
         "<div class=sub>n\xc3\xa4" "chste Termine (erscheinen im Kalender)</div>");
     {
-        static termine_entry_t te[50];   // static: siehe aps-Hinweis oben (Stack)
+        static EXT_RAM_BSS_ATTR termine_entry_t te[50];   // static/PSRAM: siehe aps-Hinweis oben (Stack)
         int tn = termine_get_all(te, 50);
         for (int i = 0; i < tn; i++) {
             char de[128];

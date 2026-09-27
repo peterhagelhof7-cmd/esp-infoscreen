@@ -11,13 +11,14 @@
 #include "cJSON.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_attr.h"   // EXT_RAM_BSS_ATTR
 
 static const char *TAG = "nina";
 #define DEFAULT_ARS "096710000000"          // Landkreis Aschaffenburg
 #define POLL_INTERVAL_MS (10 * 60 * 1000)   // alle 10 min
 #define PARSE_BUF 32768
 
-static nina_data_t s_data;
+static EXT_RAM_BSS_ATTR nina_data_t s_data;   // PSRAM (spart internen RAM)
 static SemaphoreHandle_t s_lock;
 static TaskHandle_t s_task;
 

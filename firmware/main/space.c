@@ -34,8 +34,8 @@ static const int CURATED[] = {
 #define PASS_POLL_MS  (2 * 60 * 60 * 1000)   // Satelliten alle 2 h
 #define NEO_POLL_MS   (6 * 60 * 60 * 1000)   // Asteroiden alle 6 h
 
-static sat_passes_t s_passes;
-static neos_t       s_neos;
+static EXT_RAM_BSS_ATTR sat_passes_t s_passes;   // PSRAM (spart internen RAM)
+static EXT_RAM_BSS_ATTR neos_t       s_neos;     // PSRAM (spart internen RAM)
 static SemaphoreHandle_t s_lock;
 static SemaphoreHandle_t s_gate;   // serialisiert die Poll-Funktionen
 static TaskHandle_t      s_task;   // fuer space_wake() (Notify)

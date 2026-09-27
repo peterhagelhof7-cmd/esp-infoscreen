@@ -177,6 +177,24 @@ Nach dem nächsten Poll meldet sich der Bot mit „Wieder da!" in der Gruppe.
 Zusätzlich postet der Bot automatisch in die Gruppe: **Warnungen** (BBK/NINA und
 DWD-Wetterwarnungen) sowie eine **Windböen-Warnung** (ab 50 km/h laut Spessartwetter).
 
+Jeden Morgen um **6 Uhr** kommt ein **Tagesbericht** (Wetter, Feiertag, Termine). Aus der
+OpenWeatherMap-Vorhersage für heute hängt er bei markantem Wetter Hinweise an:
+
+| Hinweis | Auslöser |
+|---|---|
+| Gewitter | Gewitter in mind. einem 3-h-Abschnitt |
+| Eis und Glätte | gefrierender Regen/Schneeregen, oder Tiefstwert ≤ 1 °C bei Niederschlag |
+| Frost | Tiefstwert ≤ 0 °C (ohne Niederschlag) |
+| Schneefall | Schnee ≥ 1 mm |
+| Viel Regen / Regen ab ca. HH Uhr | Regen ≥ 10 mm bzw. ≥ 1 mm (mit Uhrzeit des Beginns) |
+| Stürmische Böen | Böen ≥ 60 km/h |
+| Hitze | Höchstwert ≥ 30 °C |
+| Nebel | aktuell oder vorhergesagt Nebel bzw. Sicht < 1 km |
+| Nachtfrost | morgen früh (bis ~8 Uhr) ≤ 0 °C |
+| DWD | aktive amtliche DWD-Warnung (Kopfzeile, ggf. „+N weitere“) |
+
+Die Schwellen stehen als `HW_*`-Defines in `firmware/main/telegram.c`.
+
 ---
 
 ## 6. Datenquellen & Voraussetzungen

@@ -794,6 +794,30 @@ static void spessart_build(lv_obj_t *p)
     lv_obj_set_style_text_color(lb, lv_color_hex(spessart_gust_kmh(&s) >= 50.0 ? 0xef6b6b : 0xf5a742), 0);
     lv_label_set_text(lb, b);
     lv_obj_align(lb, LV_ALIGN_CENTER, 0, 60);
+
+    // Messzeitpunkt der Station; heute nur Uhrzeit, sonst mit Datum. Aelter
+    // als 90 min -> orange + "veraltet" (Station/Upload haengt).
+    if (s.has_stand) {
+        time_t now = time(NULL);
+        struct tm tn; localtime_r(&now, &tn);
+        struct tm ts = { 0 };
+        ts.tm_year = s.st_year - 1900; ts.tm_mon = s.st_mon - 1; ts.tm_mday = s.st_day;
+        ts.tm_hour = s.st_hour; ts.tm_min = s.st_min; ts.tm_isdst = -1;
+        time_t tstand = mktime(&ts);
+        bool today = tn.tm_year + 1900 == s.st_year && tn.tm_mon + 1 == s.st_mon && tn.tm_mday == s.st_day;
+        bool alt = tn.tm_year > 120 && difftime(now, tstand) > 90 * 60;
+        char st[96];   // Reserve gg. format-truncation (int-Breiten)
+        if (today)
+            snprintf(st, sizeof(st), "Messwerte von %02d:%02d Uhr%s", s.st_hour, s.st_min, alt ? " (veraltet)" : "");
+        else
+            snprintf(st, sizeof(st), "Messwerte vom %02d.%02d., %02d:%02d Uhr%s",
+                     s.st_day, s.st_mon, s.st_hour, s.st_min, alt ? " (veraltet)" : "");
+        lv_obj_t *ls = lv_label_create(p);
+        lv_obj_set_style_text_font(ls, FONT_MED, 0);
+        lv_obj_set_style_text_color(ls, lv_color_hex(alt ? 0xf5a742 : 0x8a90a8), 0);
+        lv_label_set_text(ls, st);
+        lv_obj_align(ls, LV_ALIGN_BOTTOM_MID, 0, -20);
+    }
 }
 
 static const slide_t SLIDE_SPESSART = { "spessart", "Spessartwetter", spessart_build, NULL };

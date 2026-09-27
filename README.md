@@ -19,7 +19,7 @@ genutzten Datenquellen).
 - **Kalender / Termine** – selbst angelegte Termine **plus Müllabfuhr**, nach Datum sortiert
 - **Warnungen** – amtliche **Katastrophen-/Bevölkerungsschutz-Warnungen (BBK/NINA)** und
   **DWD-Wetterwarnungen** (Bright Sky), farbcodiert nach Stufe
-- **Spessartwetter** – Temperatur/Wind **inkl. Windböen** von spessartwetter.de
+- **Spessartwetter** – Temperatur/Wind **inkl. Windböen** von spessartwetter.de, mit Messzeitpunkt
 - **Innenraum** – Temperatur/Luftfeuchte vom lokalen DHT22-Sensor (P4-Anschluss)
 - **Internet / Fritzbox** – externe IP, Down-/Upload, Auslastung (UPnP/IGD, ohne Login)
 - **Netzwerk** – Modus, IP; **WLAN-Empfang** (dBm, 20-s-Mittel)
@@ -33,6 +33,8 @@ genutzten Datenquellen).
   **neu termin JJJJ-MM-TT Text**, **status** (Uptime/Heap/WLAN),
   **kino** / **kino preview** (Kinoprogramm) – ohne Kommando: Hilfe
 - Postet **Warnungen** (BBK/NINA + DWD) und **Windböen** in die Gruppe, meldet sich nach Neustart
+- **Tagesbericht um 6 Uhr** mit Wetter, Terminen und **Hinweisen auf markantes Wetter** (Gewitter,
+  Glätte/Frost, Schnee, viel Regen/Regenbeginn, Sturmböen, Hitze, Nebel, Nachtfrost, aktive DWD-Warnung)
 
 **Webinterface** (`http://<gerätename>.local` oder per IP):
 

@@ -8,6 +8,17 @@ typedef struct {
     int  tmax;        // erwartetes Maximum (Grad C)
     char desc[32];    // Wetterbeschreibung (deutsch, Mittag)
     char icon[4];     // OWM-Icon-Code (z.B. "10d") fuer das Symbol
+    // Tages-Aggregat ueber alle 3-h-Slots (fuer die Unwetter-Hinweise im
+    // 6-Uhr-Bericht; bei "heute" nur die noch kommenden Slots)
+    float rain_mm;    // Summe Regen (rain.3h)
+    float snow_mm;    // Summe Schnee (snow.3h)
+    int   gust_kmh;   // staerkste Boe
+    int   pop;        // max. Niederschlagswahrscheinlichkeit (%)
+    bool  thunder;    // mind. ein Slot mit Gewitter (Wetter-ID 2xx)
+    bool  freezing;   // gefrierender Regen/Niesel (ID 511) oder Schneeregen (611-616)
+    bool  fog;        // Nebel (ID 741) oder Sicht < 1 km in mind. einem Slot
+    int   tmin_morning; // Tiefstwert der Slots bis ~8 Uhr lokal (999 = keiner) -> Nachtfrost
+    int   rain_from;  // lokale Stunde des ersten Regen-Slots (>= 0,3 mm), -1 = kein Regen
 } owm_fc_day_t;
 
 typedef struct {
@@ -19,6 +30,7 @@ typedef struct {
     int  feels;        // gefuehlt, Grad C
     int  humidity;     // %
     int  wind_kmh;     // km/h
+    bool fog_now;      // aktuell Nebel (ID 741) oder Sicht < 1 km
 
     bool fc_valid;     // Vorhersage gueltig
     owm_fc_day_t fc[3];// morgen, uebermorgen, Tag danach

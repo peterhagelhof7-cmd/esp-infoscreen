@@ -52,6 +52,14 @@ static bool     s_boe_warned;     // Boeen-Warnung aktiv (Hysterese gg. Spam)
 static int      s_summary_yday = -2;  // Tag (tm_yday) der letzten Tageszusammenfassung; -2 = Zeit noch nie gesehen
 #define SUMMARY_HOUR 6            // Uhrzeit der taeglichen Zusammenfassung (lokal)
 #define TG_TERMINE 5              // Anzahl Termine (Zusammenfassung + Kommando "termin")
+// Schwellen fuer die Unwetter-Hinweise im 6-Uhr-Bericht (OWM-Vorhersage heute)
+#define HW_GLAETTE_C     1        // Tiefstwert <= x Grad C -> Glaette/Frost moeglich
+#define HW_REGEN_MM     10.0f     // Regensumme >= x mm -> "viel Regen"
+#define HW_SCHNEE_MM     1.0f     // Schneesumme >= x mm -> Schneefall
+#define HW_BOEEN_KMH    60        // Boeen >= x km/h -> stuermisch
+#define HW_HITZE_C      30        // Hoechstwert >= x Grad C -> heiss
+#define HW_NACHTFROST_C  0        // Tiefstwert morgen frueh <= x Grad C -> Nachtfrost
+#define HW_REGEN_AB_MM   1.0f     // Regensumme >= x mm -> "Regen ab ca. HH Uhr"
 static int      s_kino_sun_yday = -2; // Tag des letzten Sonntags-Kino-Push; -2 = Zeit noch nie gesehen
 #define KINO_SUNDAY_HOUR 10       // Uhrzeit des Sonntags-Kino-Push (lokal)
 
@@ -292,6 +300,49 @@ static bool next_feiertag_line(char *out, size_t len)
     return true;
 }
 
+// Unwetter-Hinweise fuer heute aus der OWM-Vorhersage (+ aktueller Temperatur,
+// weil die 3-h-Slots um 6 Uhr erst ab ~8 Uhr lokal beginnen und die kalte
+// Morgenstunde sonst fehlt). Haengt je Hinweis eine Zeile an; 0 = nichts Markantes.
+static size_t append_wetter_hinweise(const owm_data_t *d, char *out, size_t len)
+{
+    const owm_fc_day_t *h = &d->today;
+    if (!h->valid) return 0;
+    size_t o = 0;
+    #define HW_ADD(...) do { if (o < len) o += snprintf(out + o, len - o, __VA_ARGS__); } while (0)
+
+    int tmin = h->tmin;
+    if (d->valid && d->temp < tmin) tmin = d->temp;
+    bool niederschlag = h->rain_mm >= 0.5f || h->snow_mm >= 0.5f;
+
+    if (h->thunder)
+        HW_ADD("\n⛈ Heute ist mit Gewitter zu rechnen");
+    if (h->freezing || (tmin <= HW_GLAETTE_C && niederschlag))
+        HW_ADD("\n🧊 Heute ist mit Eis und Glätte zu rechnen (bis %d°C)", tmin);
+    else if (tmin <= 0)
+        HW_ADD("\n🧊 Heute Frost (bis %d°C) – Vorsicht, Glättegefahr", tmin);
+    if (h->snow_mm >= HW_SCHNEE_MM)
+        HW_ADD("\n❄️ Heute Schneefall (ca. %.0f mm)", h->snow_mm);
+    if (h->rain_mm >= HW_REGEN_MM) {
+        HW_ADD("\n🌧 Heute viel Regen (ca. %.0f mm)", h->rain_mm);
+        if (h->rain_from >= 0) HW_ADD(", ab ca. %d Uhr", h->rain_from);
+    } else if (h->rain_mm >= HW_REGEN_AB_MM && h->rain_from >= 0) {
+        HW_ADD("\n🌂 Regen ab ca. %d Uhr (ca. %.0f mm)", h->rain_from, h->rain_mm);
+    }
+    if (h->gust_kmh >= HW_BOEEN_KMH)
+        HW_ADD("\n💨 Heute stürmische Böen bis %d km/h", h->gust_kmh);
+    if (h->tmax >= HW_HITZE_C)
+        HW_ADD("\n🥵 Heute wird es heiß (bis %d°C)", h->tmax);
+    if (d->fog_now)
+        HW_ADD("\n🌫 Nebel – Sicht eingeschränkt");
+    else if (h->fog)
+        HW_ADD("\n🌫 Heute zeitweise Nebel möglich");
+    // Nachtfrost: Morgen-Slots (bis ~8 Uhr) des naechsten Tages (fc[0] = morgen)
+    if (d->fc_valid && d->fc[0].valid && d->fc[0].tmin_morning <= HW_NACHTFROST_C)
+        HW_ADD("\n🥶 Heute Nacht Frost (bis %d°C) – Pflanzen/Auto abdecken", d->fc[0].tmin_morning);
+    #undef HW_ADD
+    return o < len ? o : len - 1;
+}
+
 // --- Taegliche Morgen-Zusammenfassung (Wetter + Termine) --------------------
 // Zwei Nachrichten (Wetter, dann Termine), damit keine die urlencode-Grenze
 // von telegram_send sprengt.
@@ -300,7 +351,7 @@ static void send_daily_summary(void)
     owm_refresh();   // aktuelle Werte + Vorhersage (inkl. "heute") frisch holen
     static EXT_RAM_BSS_ATTR owm_data_t d; owm_get(&d);   // static/PSRAM: Stack frei
 
-    static EXT_RAM_BSS_ATTR char msg[400];
+    static EXT_RAM_BSS_ATTR char msg[768];   // inkl. Unwetter-Hinweise
     size_t o = snprintf(msg, sizeof(msg), "☀️ Guten Morgen! Deine Tagesübersicht");
     if (d.has_key && d.valid) {
         o += snprintf(msg + o, sizeof(msg) - o,
@@ -310,12 +361,21 @@ static void send_daily_summary(void)
             o += snprintf(msg + o, sizeof(msg) - o,
                 "\nHeute: %d–%d°C, %s",
                 d.today.tmin, d.today.tmax, d.today.desc[0] ? d.today.desc : "-");
+        o += append_wetter_hinweise(&d, msg + o, sizeof(msg) - o);
     } else {
         char w[160]; build_weather(w, sizeof(w));   // Spessart-Fallback ohne OWM-Key
         o += snprintf(msg + o, sizeof(msg) - o, "\n%s", w);
     }
+    // Aktive amtliche DWD-Warnung(en) mit nennen
+    static EXT_RAM_BSS_ATTR dwd_data_t dw; dwd_get(&dw);   // static/PSRAM: Stack frei
+    if (dw.valid && dw.count > 0 && o < sizeof(msg)) {
+        o += snprintf(msg + o, sizeof(msg) - o, "\n⚠️ DWD: %s",
+                      dw.headline[0] ? dw.headline : "Warnung aktiv");
+        if (dw.count > 1 && o < sizeof(msg))
+            o += snprintf(msg + o, sizeof(msg) - o, " (+%d weitere)", dw.count - 1);
+    }
     char fl[80];
-    if (next_feiertag_line(fl, sizeof(fl)))
+    if (next_feiertag_line(fl, sizeof(fl)) && o < sizeof(msg))
         o += snprintf(msg + o, sizeof(msg) - o, "\n%s", fl);
     telegram_send(msg);
 
@@ -668,7 +728,7 @@ static void send_help(void)
 static void handle_command(const char *text)
 {
     if (s_botname[0] == '\0') return;
-    static char low[256];   // static: nur Telegram-Task -> haelt Stack frei
+    static EXT_RAM_BSS_ATTR char low[256];   // static/PSRAM: nur Telegram-Task -> haelt Stack frei
     snprintf(low, sizeof(low), "%s", text);
     tolower_str(low);
 

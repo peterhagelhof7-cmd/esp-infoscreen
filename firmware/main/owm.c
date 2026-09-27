@@ -21,7 +21,7 @@ static const char *TAG = "owm";
 #define POLL_INTERVAL_MS   (20 * 60 * 1000)   // aktuelle Werte: 20 min -> 72/Tag
 #define FC_EVERY_N_POLLS    9                  // Vorhersage jede 9. Runde -> ~3 h -> 8/Tag
 
-static owm_data_t s_data;
+static EXT_RAM_BSS_ATTR owm_data_t s_data;   // PSRAM (spart internen RAM)
 static SemaphoreHandle_t s_lock;
 // Serialisiert poll_current()/poll_forecast(): der Hintergrund-Poller und ein
 // manueller owm_refresh() duerfen nicht gleichzeitig laufen (poll_current nutzt
@@ -89,6 +89,7 @@ static void poll_current(void)
     bool valid = false;
     char desc[48] = { 0 }, icon[4] = { 0 };
     int temp = 0, feels = 0, hum = 0, wind = 0;
+    bool fog = false;
 
     int n = http_get(url, buf, sizeof(buf));
     if (n > 0) {
@@ -112,7 +113,11 @@ static void poll_current(void)
                 cJSON *ic = cJSON_GetObjectItem(w0, "icon");
                 if (cJSON_IsString(d)) strncpy(desc, d->valuestring, sizeof(desc) - 1);
                 if (cJSON_IsString(ic)) strncpy(icon, ic->valuestring, sizeof(icon) - 1);
+                cJSON *id = cJSON_GetObjectItem(w0, "id");
+                if (cJSON_IsNumber(id) && id->valueint == 741) fog = true;
             }
+            cJSON *vis = cJSON_GetObjectItem(root, "visibility");
+            if (cJSON_IsNumber(vis) && vis->valueint < 1000) fog = true;
             if (cJSON_IsObject(w)) {
                 cJSON *sp = cJSON_GetObjectItem(w, "speed");
                 if (cJSON_IsNumber(sp)) wind = iround(sp->valuedouble * 3.6);
@@ -129,6 +134,7 @@ static void poll_current(void)
         strncpy(s_data.desc, desc, sizeof(s_data.desc) - 1);
         strncpy(s_data.icon, icon, sizeof(s_data.icon) - 1);
         s_data.temp = temp; s_data.feels = feels; s_data.humidity = hum; s_data.wind_kmh = wind;
+        s_data.fog_now = fog;
     }
     xSemaphoreGive(s_lock);
 }
@@ -172,6 +178,7 @@ static bool poll_forecast(void)
         else if (k == 2) snprintf(fc[k].label, sizeof(fc[k].label), "\xc3\x9c" "bermorgen");
         else             snprintf(fc[k].label, sizeof(fc[k].label), "%s", wd);
         fc[k].tmin = 999; fc[k].tmax = -999;
+        fc[k].tmin_morning = 999; fc[k].rain_from = -1;
     }
     int best_hd[4] = { 99, 99, 99, 99 };   // Abstand zur Mittagszeit fuer die Beschreibung
 
@@ -187,11 +194,58 @@ static bool poll_forecast(void)
             cJSON *tmx = cJSON_GetObjectItem(main, "temp_max");
             if (cJSON_IsNumber(tmn)) { int v = iround(tmn->valuedouble); if (v < fc[k].tmin) fc[k].tmin = v; }
             if (cJSON_IsNumber(tmx)) { int v = iround(tmx->valuedouble); if (v > fc[k].tmax) fc[k].tmax = v; }
+            cJSON *weather = cJSON_GetObjectItem(e, "weather");
+
+            // Tages-Aggregat fuer die Unwetter-Hinweise
+            cJSON *rain = cJSON_GetObjectItem(e, "rain");
+            cJSON *snow = cJSON_GetObjectItem(e, "snow");
+            cJSON *r3 = cJSON_IsObject(rain) ? cJSON_GetObjectItem(rain, "3h") : NULL;
+            cJSON *s3 = cJSON_IsObject(snow) ? cJSON_GetObjectItem(snow, "3h") : NULL;
+            if (cJSON_IsNumber(r3)) fc[k].rain_mm += (float)r3->valuedouble;
+            // Lokale Stunde des Slots aus dem Unix-Zeitstempel (dt_txt ist UTC)
+            int lhour = -1;
+            cJSON *dt = cJSON_GetObjectItem(e, "dt");
+            if (cJSON_IsNumber(dt)) {
+                time_t t = (time_t)dt->valuedouble;
+                struct tm lt; localtime_r(&t, &lt);
+                lhour = lt.tm_hour;
+            }
+            if (cJSON_IsNumber(r3) && r3->valuedouble >= 0.3 && fc[k].rain_from < 0 && lhour >= 0)
+                fc[k].rain_from = lhour;
+            if (lhour >= 0 && lhour <= 8 && cJSON_IsNumber(tmn)) {
+                int v = iround(tmn->valuedouble);
+                if (v < fc[k].tmin_morning) fc[k].tmin_morning = v;
+            }
+            cJSON *vis = cJSON_GetObjectItem(e, "visibility");
+            if (cJSON_IsNumber(vis) && vis->valueint < 1000) fc[k].fog = true;
+            if (cJSON_IsNumber(s3)) fc[k].snow_mm += (float)s3->valuedouble;
+            cJSON *wind = cJSON_GetObjectItem(e, "wind");
+            cJSON *gust = cJSON_IsObject(wind) ? cJSON_GetObjectItem(wind, "gust") : NULL;
+            if (cJSON_IsNumber(gust)) {
+                int g = iround(gust->valuedouble * 3.6);   // m/s -> km/h
+                if (g > fc[k].gust_kmh) fc[k].gust_kmh = g;
+            }
+            cJSON *pop = cJSON_GetObjectItem(e, "pop");
+            if (cJSON_IsNumber(pop)) {
+                int p = iround(pop->valuedouble * 100.0);
+                if (p > fc[k].pop) fc[k].pop = p;
+            }
+            if (cJSON_IsArray(weather)) {
+                cJSON *w;
+                cJSON_ArrayForEach(w, weather) {
+                    cJSON *id = cJSON_GetObjectItem(w, "id");
+                    if (!cJSON_IsNumber(id)) continue;
+                    int wid = id->valueint;
+                    if (wid >= 200 && wid < 300) fc[k].thunder = true;
+                    if (wid == 511 || (wid >= 611 && wid <= 616)) fc[k].freezing = true;
+                    if (wid == 741) fc[k].fog = true;
+                }
+            }
+
             int hour = (dts[11] - '0') * 10 + (dts[12] - '0');
             int hd = hour > 13 ? hour - 13 : 13 - hour;
             if (hd < best_hd[k]) {
                 best_hd[k] = hd;
-                cJSON *weather = cJSON_GetObjectItem(e, "weather");
                 if (cJSON_IsArray(weather) && cJSON_GetArraySize(weather) > 0) {
                     cJSON *w0 = cJSON_GetArrayItem(weather, 0);
                     cJSON *d = cJSON_GetObjectItem(w0, "description");

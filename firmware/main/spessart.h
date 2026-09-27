@@ -6,6 +6,8 @@ typedef struct {
     char temp[16];   // z.B. "19,8" (Grad C)
     char wind[16];   // z.B. "4,6"  (km/h) - mittlere Windgeschwindigkeit
     char gust[16];   // z.B. "19,3" (km/h) - Windboeen (aktuell)
+    bool has_stand;  // Messzeitpunkt der Seite erkannt?
+    int  st_day, st_mon, st_year, st_hour, st_min;   // "... am Sonntag, 27. September 2026 um 11:10"
 } spessart_data_t;
 
 // Startet den Hintergrund-Poller (spessartwetter.de custom.html, alle 30 min).

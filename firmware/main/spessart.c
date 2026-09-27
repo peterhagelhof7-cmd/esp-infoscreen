@@ -40,6 +40,41 @@ static bool number_before(const char *html, const char *marker, char *out, size_
     return true;
 }
 
+// Messzeitpunkt aus "...wetterlage in johannesberg/ufr. am Sonntag, 27. September
+// 2026 um 11:10" (Ortszeit, ISO-8859-1: "M\xe4rz"). Monat per Praefix erkennen.
+static bool parse_stand(const char *html, spessart_data_t *d)
+{
+    static const char *MON[] = { "Jan", "Feb", "M\xe4r", "Apr", "Mai", "Jun",
+                                 "Jul", "Aug", "Sep", "Okt", "Nov", "Dez" };
+    const char *p = strstr(html, "wetterlage");
+    if (!p) return false;
+    p = strstr(p, ", ");                      // hinter dem Wochentag
+    if (!p || p - html > 20000) return false;
+    p += 2;
+    char *end;
+    long day = strtol(p, &end, 10);
+    if (end == p || *end != '.' || day < 1 || day > 31) return false;
+    p = end + 1;
+    while (*p == ' ') p++;
+    int mon = 0;
+    for (int i = 0; i < 12; i++) if (strncmp(p, MON[i], strlen(MON[i])) == 0) { mon = i + 1; break; }
+    if (!mon) return false;
+    while (*p && *p != ' ') p++;              // Monatsname ueberspringen
+    long year = strtol(p, &end, 10);
+    if (end == p || year < 2000) return false;
+    p = strstr(end, "um ");
+    if (!p || p - end > 8) return false;
+    p += 3;
+    long hh = strtol(p, &end, 10);
+    if (end == p || *end != ':' || hh < 0 || hh > 23) return false;
+    p = end + 1;
+    long mm = strtol(p, &end, 10);
+    if (end == p || mm < 0 || mm > 59) return false;
+    d->st_day = (int)day; d->st_mon = mon; d->st_year = (int)year;
+    d->st_hour = (int)hh; d->st_min = (int)mm;
+    return true;
+}
+
 static void poll_once(void)
 {
     static EXT_RAM_BSS_ATTR char buf[20000];   // Parse-Puffer ins PSRAM (spart internen RAM)
@@ -62,6 +97,7 @@ static void poll_once(void)
             if (t_ok) strncpy(d.temp, temp, sizeof(d.temp) - 1);
             if (w_ok) strncpy(d.wind, wind, sizeof(d.wind) - 1);
             if (g_ok) strncpy(d.gust, gust, sizeof(d.gust) - 1);
+            d.has_stand = parse_stand(buf, &d);
         } else {
             ESP_LOGW(TAG, "keine Werte gefunden (Layout geaendert?)");
         }

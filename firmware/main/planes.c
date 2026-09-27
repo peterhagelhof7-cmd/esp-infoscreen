@@ -25,7 +25,7 @@ static const char *TAG = "planes";
 
 #define POLL_INTERVAL_MS  (60 * 1000)   // 1x/min (Rate-Limit ~1 Anfrage/s, hoefliche Nutzung)
 
-static planes_data_t s_data;
+static EXT_RAM_BSS_ATTR planes_data_t s_data;   // PSRAM (spart internen RAM)
 static SemaphoreHandle_t s_lock;
 static SemaphoreHandle_t s_poll_gate;   // serialisiert Poller und manuellen Refresh
 
@@ -78,7 +78,7 @@ typedef struct {
     char to[28];        // Ziel-Stadt
     bool done;          // Lookup schon versucht?
 } route_cache_t;
-static route_cache_t s_routes[ROUTE_CACHE];
+static EXT_RAM_BSS_ATTR route_cache_t s_routes[ROUTE_CACHE];   // PSRAM (spart internen RAM)
 static int s_route_next;   // Ring-Einfuegeposition
 
 // Ortsnamen aus einem adsbdb origin/destination-Objekt: bevorzugt die Stadt

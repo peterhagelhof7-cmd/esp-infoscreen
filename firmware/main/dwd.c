@@ -14,7 +14,7 @@ static const char *TAG = "dwd";
 #define DWD_URL "https://api.brightsky.dev/alerts?lat=50.008&lon=9.216"
 #define POLL_INTERVAL_MS (15 * 60 * 1000)   // alle 15 min
 
-static dwd_data_t s_data;
+static EXT_RAM_BSS_ATTR dwd_data_t s_data;   // PSRAM (spart internen RAM)
 static SemaphoreHandle_t s_lock;
 
 static void poll_once(void)
