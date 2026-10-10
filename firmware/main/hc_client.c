@@ -37,6 +37,8 @@
 #include "esp_attr.h"
 #include "esp_system.h"
 #include "esp_log.h"
+#include "esp_partition.h"
+#include "esp_rom_crc.h"
 
 static const char *TAG = "hc";
 
@@ -46,8 +48,15 @@ static const char *TAG = "hc";
 #define STALE_S         (5 * 60)             // ab hier "home-central nicht erreichbar"
 #define REDISCOVER_S    (5 * 60)             // dann Adresse per mDNS neu suchen
 #define PAIR_RETRY_MS   (30 * 1000)          // Such-/Kopplungsversuch im Direkt-Modus
+#define FALLBACK_S      (30 * 60)            // so lange ohne home-central -> Notbetrieb (direkt)
+#define PROBE_MS        (2 * 60 * 1000)      // im Notbetrieb: home-central wieder da?
+#define CACHE_EVERY_S   (15 * 60)            // Daten-Cache hoechstens so oft in den Flash
+#define CACHE_SLOT      (64 * 1024)          // ein Cache-Platz in der Partition "storage"
+#define CACHE_SLOTS     64                   // Ring ueber 4 MB -> Flash-Verschleiss verteilt
+#define CACHE_MAGIC     0x48434331u          // "HCC1"
 
 static hc_mode_t s_mode;
+static bool s_fallback;         // Notbetrieb: gekoppelt, aber home-central war zu lange weg
 static char s_url[64];          // "http://192.168.79.1:80"
 static char s_token[48];
 static SemaphoreHandle_t s_lock;
@@ -63,10 +72,14 @@ void hc_client_early_init(void)
     config_get_str_def("data_src", src, sizeof(src), "auto");
     config_get_str_def("hc_url", s_url, sizeof(s_url), "");
     config_get_str_def("hc_token", s_token, sizeof(s_token), "");
-    s_mode = (strcmp(src, "direct") != 0 && s_url[0] && s_token[0]) ? HC_MODE_CLIENT : HC_MODE_DIRECT;
+    char fb[4] = "";
+    config_get_str("hc_fallback", fb, sizeof(fb));
+    bool paired = strcmp(src, "direct") != 0 && s_url[0] && s_token[0];
+    s_fallback = paired && fb[0] == '1';
+    s_mode = (paired && !s_fallback) ? HC_MODE_CLIENT : HC_MODE_DIRECT;
     ESP_LOGI(TAG, "Datenquelle: %s (data_src=%s%s%s)",
-             s_mode == HC_MODE_CLIENT ? "home-central" : "direkt", src,
-             s_url[0] ? ", Server " : "", s_url);
+             s_mode == HC_MODE_CLIENT ? "home-central" : s_fallback ? "direkt (Notbetrieb)" : "direkt",
+             src, s_url[0] ? ", Server " : "", s_url);
 }
 
 hc_mode_t hc_mode(void) { return s_mode; }
@@ -316,14 +329,17 @@ static void apply_display(const cJSON *j)
     }
 }
 
-static bool apply_screen(const char *json)
+// Server-Antwort uebernehmen. from_cache: gesicherte Antwort nach dem Start ohne
+// Server -> nur Daten, KEINE Uhrzeit (veraltet), kein Kommando, keine Anzeige.
+// cfg_hash (optional) erhaelt den Pruefwert der Einstellungen.
+static bool apply_screen(const char *json, bool from_cache, char *cfg_hash, size_t hlen)
 {
     cJSON *root = cJSON_Parse(json);
     if (!cJSON_IsObject(root)) { cJSON_Delete(root); return false; }
 
     // Uhr: normal per NTP von home-central; ohne Sync die Serverzeit uebernehmen.
     double t = jnum(root, "time", 0);
-    if (t > 1.7e9 && !time_sync_is_valid()) {
+    if (!from_cache && t > 1.7e9 && !time_sync_is_valid()) {
         struct timeval tv = { .tv_sec = (time_t)t };
         settimeofday(&tv, NULL);
         ESP_LOGI(TAG, "Uhr von home-central gestellt");
@@ -336,10 +352,11 @@ static bool apply_screen(const char *json)
     apply_planes(OBJ(root, "planes"));
     apply_space(OBJ(root, "space"));
     apply_lists(root);
+    if (cfg_hash) jstr(root, "cfg_hash", cfg_hash, hlen);
 
     const cJSON *cmd = OBJ(root, "cmd");
-    bool reboot = cJSON_IsString(cmd) && strcmp(cmd->valuestring, "reboot") == 0;
-    apply_display(OBJ(root, "display"));
+    bool reboot = !from_cache && cJSON_IsString(cmd) && strcmp(cmd->valuestring, "reboot") == 0;
+    if (!from_cache) apply_display(OBJ(root, "display"));
     cJSON_Delete(root);
     if (reboot) {
         ESP_LOGW(TAG, "Neustart auf Anforderung von home-central");
@@ -347,6 +364,93 @@ static bool apply_screen(const char *json)
         esp_restart();
     }
     return true;
+}
+
+// --- Einstellungs-Spiegel (fuer den Notbetrieb ohne home-central) ----------------
+// Schluessel, die nie aus home-central uebernommen werden.
+static bool mirror_skip(const char *k)
+{
+    static const char *SKIP[] = { "data_src", "hc_url", "hc_token", "hc_cfg_hash", "hc_fallback",
+                                  "wifi_ssid", "wifi_pass", "dev_name", "rot180", "brightness",
+                                  "bl_floor", "slide_sec" };
+    for (size_t i = 0; i < sizeof(SKIP) / sizeof(SKIP[0]); i++) if (strcmp(k, SKIP[i]) == 0) return true;
+    return strncmp(k, "sl_", 3) == 0;
+}
+
+static void sync_config(const char *want_hash)
+{
+    char *buf = heap_caps_malloc(SCREEN_BUF, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    char *cur = heap_caps_malloc(4096, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!buf || !cur) { free(buf); free(cur); return; }
+    char url[96]; snprintf(url, sizeof(url), "%s/api/v1/config", s_url);
+    int status = 0;
+    int n = http_request(url, NULL, s_token, buf, SCREEN_BUF, &status);
+    cJSON *root = (n > 0 && status == 200) ? cJSON_Parse(buf) : NULL;
+    const cJSON *cfg = OBJ(root, "config"), *e;
+    int changed = 0;
+    if (cJSON_IsObject(cfg)) {
+        cJSON_ArrayForEach(e, cfg) {
+            if (!cJSON_IsString(e) || !e->string || mirror_skip(e->string)) continue;
+            if (strlen(e->string) > 15 || strlen(e->valuestring) >= 4000) continue;   // NVS-Grenzen
+            if (config_get_str(e->string, cur, 4096) && strcmp(cur, e->valuestring) == 0) continue;
+            config_set_str(e->string, e->valuestring);   // nur Aenderungen schreiben (Flash schonen)
+            changed++;
+        }
+        config_set_str("hc_cfg_hash", want_hash);
+        ESP_LOGI(TAG, "Einstellungs-Kopie von home-central aktualisiert (%d geaendert)", changed);
+    } else {
+        ESP_LOGW(TAG, "Einstellungs-Kopie: HTTP %d", status);
+    }
+    cJSON_Delete(root);
+    free(buf); free(cur);
+}
+
+// --- Daten-Cache im Flash (Partition "storage", Ring aus 64 Plaetzen) -------------
+typedef struct { uint32_t magic, seq, len, crc; } cache_hdr_t;
+static const esp_partition_t *s_cache_part;
+static uint32_t s_cache_seq;
+static int s_cache_slot = -1;
+
+static void cache_init(void)
+{
+    s_cache_part = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, "storage");
+    if (!s_cache_part || s_cache_part->size < (size_t)CACHE_SLOT * CACHE_SLOTS) {
+        ESP_LOGW(TAG, "Cache-Partition 'storage' fehlt/zu klein - kein Daten-Cache");
+        s_cache_part = NULL;
+        return;
+    }
+    for (int i = 0; i < CACHE_SLOTS; i++) {   // neuesten gueltigen Platz suchen
+        cache_hdr_t h;
+        if (esp_partition_read(s_cache_part, (size_t)i * CACHE_SLOT, &h, sizeof(h)) != ESP_OK) continue;
+        if (h.magic != CACHE_MAGIC || h.len == 0 || h.len > CACHE_SLOT - sizeof(h)) continue;
+        if (s_cache_slot < 0 || h.seq > s_cache_seq) { s_cache_seq = h.seq; s_cache_slot = i; }
+    }
+}
+
+static bool cache_load(char *buf, size_t len)
+{
+    if (!s_cache_part || s_cache_slot < 0) return false;
+    cache_hdr_t h;
+    size_t off = (size_t)s_cache_slot * CACHE_SLOT;
+    if (esp_partition_read(s_cache_part, off, &h, sizeof(h)) != ESP_OK || h.len >= len) return false;
+    if (esp_partition_read(s_cache_part, off + sizeof(h), buf, h.len) != ESP_OK) return false;
+    buf[h.len] = '\0';
+    return esp_rom_crc32_le(0, (const uint8_t *)buf, h.len) == h.crc;
+}
+
+static void cache_save(const char *json, size_t n)
+{
+    if (!s_cache_part || n == 0 || n > CACHE_SLOT - sizeof(cache_hdr_t)) return;
+    int slot = (s_cache_slot + 1) % CACHE_SLOTS;
+    size_t off = (size_t)slot * CACHE_SLOT;
+    size_t span = (sizeof(cache_hdr_t) + n + 4095) & ~(size_t)4095;   // nur benoetigte Sektoren loeschen
+    cache_hdr_t h = { CACHE_MAGIC, s_cache_seq + 1, (uint32_t)n,
+                      esp_rom_crc32_le(0, (const uint8_t *)json, n) };
+    if (esp_partition_erase_range(s_cache_part, off, span) != ESP_OK) return;
+    if (esp_partition_write(s_cache_part, off + sizeof(h), json, n) != ESP_OK) return;
+    if (esp_partition_write(s_cache_part, off, &h, sizeof(h)) != ESP_OK) return;   // Kopf zuletzt
+    s_cache_slot = slot;
+    s_cache_seq = h.seq;
 }
 
 // --- Statusmeldung an home-central ----------------------------------------------
@@ -491,21 +595,38 @@ static void client_task(void *arg)
     (void)arg;
     char *buf = heap_caps_malloc(SCREEN_BUF, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!buf) { ESP_LOGE(TAG, "kein Speicher fuer den Abruf"); vTaskDelete(NULL); return; }
+
+    // Gesicherte Daten anzeigen, bis home-central antwortet (Start ohne Server).
+    cache_init();
+    if (cache_load(buf, SCREEN_BUF) && apply_screen(buf, true, NULL, 0))
+        ESP_LOGI(TAG, "Daten aus dem Cache geladen (Stand vor dem Neustart)");
+
     vTaskDelay(pdMS_TO_TICKS(3000));
     int round = 0, fails = 0;
-    time_t last_discover = 0;
-    bool stale_shown = false;
+    uint32_t last_ok_ms = 0, last_cache_ms = 0, last_discover_ms = 0;
+    bool stale_shown = false, have_cache_time = false;
     for (;;) {
+        uint32_t now_ms = esp_log_timestamp();
         if (wait_connected()) {
             char url[96]; snprintf(url, sizeof(url), "%s/api/v1/screen", s_url);
             int status = 0;
+            char hash[16] = "";
             int n = http_request(url, NULL, s_token, buf, SCREEN_BUF, &status);
             if (n >= SCREEN_BUF - 1) ESP_LOGW(TAG, "Antwort >= %d B - SCREEN_BUF vergroessern", SCREEN_BUF);
-            if (n > 0 && status == 200 && apply_screen(buf)) {
+            if (n > 0 && status == 200 && apply_screen(buf, false, hash, sizeof(hash))) {
                 xSemaphoreTake(s_lock, portMAX_DELAY);
                 s_last_ok = time(NULL);
                 xSemaphoreGive(s_lock);
+                last_ok_ms = now_ms;
                 fails = 0;
+                if (!have_cache_time || now_ms - last_cache_ms >= CACHE_EVERY_S * 1000U) {
+                    cache_save(buf, (size_t)n);   // fuer den naechsten Start ohne Server
+                    last_cache_ms = now_ms;
+                    have_cache_time = true;
+                }
+                char have[16] = "";
+                config_get_str("hc_cfg_hash", have, sizeof(have));
+                if (hash[0] && strcmp(hash, have) != 0) sync_config(hash);
                 if (round % REPORT_EVERY == 0) send_report();
                 round++;
             } else {
@@ -519,9 +640,8 @@ static void client_task(void *arg)
                         ESP_LOGI(TAG, "Neuer Token von home-central uebernommen");
                     }
                 }
-                time_t now = time(NULL);
-                if (fails >= 3 && now - last_discover > REDISCOVER_S) {   // Server umgezogen?
-                    last_discover = now;
+                if (fails >= 3 && now_ms - last_discover_ms > REDISCOVER_S * 1000U) {   // Server umgezogen?
+                    last_discover_ms = now_ms;
                     char nu[64];
                     if (discover(nu, sizeof(nu)) && strcmp(nu, s_url) != 0) {
                         ESP_LOGW(TAG, "home-central unter neuer Adresse %s", nu);
@@ -531,19 +651,27 @@ static void client_task(void *arg)
                 }
             }
         }
-        // Hinweis auf dem Display, wenn die Daten veralten (Daten bleiben stehen)
-        time_t now = time(NULL), ok;
-        xSemaphoreTake(s_lock, portMAX_DELAY);
-        ok = s_last_ok;
-        xSemaphoreGive(s_lock);
-        bool stale = ok == 0 ? (esp_log_timestamp() > STALE_S * 1000U) : (now - ok > STALE_S);
+        // Wie lange schon ohne home-central? (Uptime-basiert: unabhaengig von der Uhr)
+        uint32_t gone_s = (now_ms - last_ok_ms) / 1000U;
+        if (gone_s >= FALLBACK_S && wait_connected()) {   // ohne WLAN hilft der Notbetrieb nicht
+            ESP_LOGW(TAG, "home-central seit %u min nicht erreichbar -> Notbetrieb (direkte Abfragen)",
+                     (unsigned)(gone_s / 60));
+            config_set_str("hc_fallback", "1");
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            esp_restart();
+        }
+        bool stale = gone_s >= STALE_S;
         if (stale != stale_shown) {
             stale_shown = stale;
             if (stale) {
-                char msg[64];
+                char msg[96];
+                time_t ok;
+                xSemaphoreTake(s_lock, portMAX_DELAY);
+                ok = s_last_ok;
+                xSemaphoreGive(s_lock);
                 if (ok) { struct tm tm; localtime_r(&ok, &tm);
                           snprintf(msg, sizeof(msg), "home-central nicht erreichbar - Daten von %02d:%02d", tm.tm_hour, tm.tm_min); }
-                else      snprintf(msg, sizeof(msg), "home-central nicht erreichbar");
+                else      snprintf(msg, sizeof(msg), "home-central nicht erreichbar - gespeicherte Daten");
                 slideshow_set_status(msg);
             } else {
                 slideshow_set_status(NULL);
@@ -553,10 +681,45 @@ static void client_task(void *arg)
     }
 }
 
+// Notbetrieb: direkte Abfragen laufen; regelmaessig pruefen, ob home-central
+// wieder da ist -> dann zurueck in den Client-Modus (Neustart).
+static void probe_task(void *arg)
+{
+    (void)arg;
+    vTaskDelay(pdMS_TO_TICKS(15000));
+    slideshow_set_status("Notbetrieb: home-central nicht erreichbar - direkte Abfragen");
+    for (;;) {
+        if (wait_connected()) {
+            char url[96], resp[128]; int status = 0;
+            snprintf(url, sizeof(url), "%s/api/v1/health", s_url);
+            http_request(url, NULL, NULL, resp, sizeof(resp), &status);
+            if (status != 200) {   // evtl. neue Adresse
+                char nu[64];
+                if (discover(nu, sizeof(nu))) {
+                    snprintf(url, sizeof(url), "%s/api/v1/health", nu);
+                    http_request(url, NULL, NULL, resp, sizeof(resp), &status);
+                    if (status == 200 && strcmp(nu, s_url) != 0) config_set_str("hc_url", nu);
+                }
+            }
+            if (status == 200) {
+                ESP_LOGW(TAG, "home-central wieder erreichbar -> zurueck in den Client-Modus");
+                config_set_str("hc_fallback", "0");
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                esp_restart();
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(PROBE_MS));
+    }
+}
+
 void hc_client_start(void)
 {
     if (s_mode == HC_MODE_CLIENT) {
         xTaskCreate(client_task, "hc_client", 8192, NULL, 4, NULL);
+        return;
+    }
+    if (s_fallback) {
+        xTaskCreate(probe_task, "hc_probe", 6144, NULL, 2, NULL);
         return;
     }
     char src[12]; config_get_str_def("data_src", src, sizeof(src), "auto");
@@ -573,6 +736,9 @@ void hc_client_status(char *out, size_t len)
         if (!ok) { snprintf(out, len, "home-central (%s) &ndash; noch kein Abruf", s_url); return; }
         struct tm tm; localtime_r(&ok, &tm);
         snprintf(out, len, "home-central (%s) &ndash; letzter Abruf %02d:%02d:%02d", s_url, tm.tm_hour, tm.tm_min, tm.tm_sec);
+    } else if (s_fallback) {
+        snprintf(out, len, "<b>Notbetrieb</b>: home-central (%s) nicht erreichbar &ndash; direkte Abfragen "
+                 "mit der gespiegelten Einstellungs-Kopie; Pr&uuml;fung alle 2 min", s_url);
     } else if (strcmp(src, "direct") == 0) {
         snprintf(out, len, "Direkte Abfragen (home-central-Suche aus)");
     } else if (s_pair_state == 2) {

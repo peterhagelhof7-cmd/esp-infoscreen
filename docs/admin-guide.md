@@ -85,6 +85,17 @@ das entlastet RAM und WLAN deutlich.
    - Uhrzeit per NTP von home-central.
 4. Den **Telegram-Token** danach in home-central eintragen (der Bot läuft nur noch dort).
 
+**Ab v1.3.1 – eigenständig bei Server-Ausfall:**
+- **Einstellungs-Kopie:** home-central liefert einen Prüfwert seiner Einstellungen mit; ändert er sich, holt
+  der Infoscreen alle Einstellungen (außer WLAN, Gerätename, Anzeige) und speichert sie im eigenen NVS.
+  Leere Keys überschreiben nie vorhandene.
+- **Daten-Cache:** die letzte Server-Antwort wird höchstens alle 15 min in der Flash-Partition `storage`
+  gesichert (Ring aus 64 Plätzen à 64 KB). Nach einem Neustart ohne Server zeigt der Infoscreen diese Daten.
+- **Notbetrieb:** ist home-central 30 min nicht erreichbar (bei bestehendem WLAN), startet der Infoscreen
+  mit direkten Abfragen und der Einstellungs-Kopie neu (Hinweis unten links „Notbetrieb …“, Telegram-Bot
+  läuft dann im Infoscreen). Alle 2 min prüft er `/api/v1/health`; ist home-central zurück, wechselt er
+  per Neustart wieder in den Client-Modus.
+
 Anzeige (Helligkeit, Slides, Intervall, Drehung) und alle Datenquellen werden im Client-Modus in
 home-central eingestellt; Änderungen an Drehung, Intervall oder Slide-Auswahl übernimmt der Infoscreen
 mit einem automatischen Neustart. Ist home-central nicht erreichbar, bleiben die letzten Daten stehen und
