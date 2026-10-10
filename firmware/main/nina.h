@@ -16,4 +16,5 @@ typedef struct {
 
 void nina_init(void);
 void nina_get(nina_data_t *out);
-void nina_refresh(void);   // sofort neu abrufen (z.B. nach ARS-Aenderung)
+void nina_refresh(void);
+void nina_set(const nina_data_t *d);   // Client-Modus: Daten von home-central   // sofort neu abrufen (z.B. nach ARS-Aenderung)

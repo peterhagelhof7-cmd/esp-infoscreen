@@ -26,6 +26,7 @@ idf_component_register(
         "kino.c"
         "dht22.c"
         "kurse.c"
+        "hc_client.c"
         "fonts/montserrat_de_14.c"
         "fonts/montserrat_de_28.c"
         "fonts/montserrat_de_48.c"

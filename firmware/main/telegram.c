@@ -1,5 +1,6 @@
 #include "telegram.h"
 #include "http_util.h"
+#include "hc_client.h"
 #include "config_store.h"
 #include "spessart.h"
 #include "fritzbox.h"
@@ -141,8 +142,26 @@ static bool get_chat(char *out, size_t len)
     return config_get_str("tg_chat", out, len) && out[0] != '\0';
 }
 
+static bool s_remote_cfg;   // Client-Modus: Bot auf home-central konfiguriert?
+
+void telegram_set_remote(const tg_msg_t *msgs, int n, unsigned version, bool configured)
+{
+    if (!s_lock) return;
+    if (n > TG_MAX_MSGS) n = TG_MAX_MSGS;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_remote_cfg = configured;
+    if (version != s_version) {
+        for (int i = 0; i < n; i++) s_hist[i] = msgs[i];
+        s_hist_count = n;
+        s_hist_head = 0;
+        s_version = version;
+    }
+    xSemaphoreGive(s_lock);
+}
+
 bool telegram_configured(void)
 {
+    if (hc_mode() == HC_MODE_CLIENT) return s_remote_cfg;
     char t[64], c[32];
     return get_token(t, sizeof(t)) && get_chat(c, sizeof(c));
 }
@@ -150,6 +169,7 @@ bool telegram_configured(void)
 // --- Senden -----------------------------------------------------------------
 bool telegram_send(const char *text)
 {
+    if (hc_mode() == HC_MODE_CLIENT) return hc_client_tg_send(text);   // Bot von home-central
     char token[64], chat[32];
     if (!get_token(token, sizeof(token)) || !get_chat(chat, sizeof(chat))) return false;
 
@@ -1004,5 +1024,6 @@ static void poll_task(void *arg)
 void telegram_init(void)
 {
     s_lock = xSemaphoreCreateMutex();
+    if (hc_mode() == HC_MODE_CLIENT) return;   // Bot laeuft auf home-central
     xTaskCreate(poll_task, "telegram", 8192, NULL, 4, NULL);
 }

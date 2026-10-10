@@ -1,5 +1,9 @@
 #include "feiertage.h"
 #include "config_store.h"
+#include "hc_client.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include "esp_attr.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -106,8 +110,30 @@ static int fill_year(int year, int blbit, feiertag_t *out, int max, int n)
     return n;
 }
 
+static EXT_RAM_BSS_ATTR feiertag_t s_remote[40];   // Client-Modus (PSRAM)
+static int s_remote_n;
+static SemaphoreHandle_t s_remote_lock;
+
+void feiertage_set_remote(const feiertag_t *list, int n)
+{
+    if (!s_remote_lock) s_remote_lock = xSemaphoreCreateMutex();
+    if (n > 40) n = 40;
+    xSemaphoreTake(s_remote_lock, portMAX_DELAY);
+    memcpy(s_remote, list, n * sizeof(feiertag_t));
+    s_remote_n = n;
+    xSemaphoreGive(s_remote_lock);
+}
+
 int feiertage_get(feiertag_t *out, int max)
 {
+    if (hc_mode() == HC_MODE_CLIENT) {
+        if (!s_remote_lock) return 0;
+        xSemaphoreTake(s_remote_lock, portMAX_DELAY);
+        int n = s_remote_n < max ? s_remote_n : max;
+        memcpy(out, s_remote, n * sizeof(feiertag_t));
+        xSemaphoreGive(s_remote_lock);
+        return n;
+    }
     char bl[8];
     config_get_str_def("feiertage_bl", bl, sizeof(bl), "BY");
     int idx = bl_index(bl);

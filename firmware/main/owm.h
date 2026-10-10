@@ -50,3 +50,6 @@ void owm_get(owm_data_t *out);
 // bis fertig. Fuer den "jetzt aktualisieren"-Button im Web und das Telegram-
 // Kommando "vorhersage". Serialisiert mit dem Hintergrund-Poller.
 void owm_refresh(void);
+
+// Client-Modus: Daten von home-central setzen.
+void owm_set(const owm_data_t *d);

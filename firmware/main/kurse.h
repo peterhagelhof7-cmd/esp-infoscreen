@@ -22,3 +22,6 @@ void kurse_init(void);
 
 // Threadsichere Kopie der zuletzt abgefragten Werte.
 void kurse_get(kurse_data_t *out);
+
+// Client-Modus: Daten von home-central setzen.
+void kurse_set(const kurse_data_t *d);

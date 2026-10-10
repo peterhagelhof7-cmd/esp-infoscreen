@@ -21,3 +21,6 @@ void fritzbox_init(void);
 
 // Threadsichere Kopie der zuletzt abgefragten Werte.
 void fritzbox_get(fritzbox_data_t *out);
+
+// Client-Modus: Daten von home-central setzen.
+void fritzbox_set(const fritzbox_data_t *d);

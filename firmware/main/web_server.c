@@ -13,6 +13,7 @@
 #include "planes.h"
 #include "space.h"
 #include "logbuf.h"
+#include "hc_client.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -23,6 +24,7 @@
 #include "esp_system.h"
 #include "esp_attr.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "cJSON.h"
 
 static const char *TAG = "web";
@@ -63,7 +65,7 @@ static bool form_field(const char *body, const char *key, char *out, size_t out_
             const char *val = p + klen + 1;
             const char *end = strchr(val, '&');
             size_t len = end ? (size_t)(end - val) : strlen(val);
-            char raw[128];
+            char raw[256];   // reicht fuer URL-codierte Muell-Bezeichnung (lbl)
             if (len >= sizeof(raw)) len = sizeof(raw) - 1;
             memcpy(raw, val, len);
             raw[len] = '\0';
@@ -169,6 +171,37 @@ static esp_err_t settings_get(httpd_req_t *req)
         "<button type=submit>Speichern</button></form></div>", dvesc);
     httpd_resp_sendstr_chunk(req, card);
 
+    // --- Datenquelle-Card: direkt oder home-central (Client-Modus) ---
+    bool hc_cl = hc_mode() == HC_MODE_CLIENT;
+    {
+        static EXT_RAM_BSS_ATTR char hst[192], hsrc[12], hcard[1280];
+        hc_client_status(hst, sizeof(hst));
+        config_get_str_def("data_src", hsrc, sizeof(hsrc), "auto");
+        bool direct = strcmp(hsrc, "direct") == 0;
+        snprintf(hcard, sizeof(hcard),
+            "<div class=card style='margin-top:16px'><h1>Datenquelle</h1>"
+            "<div class=sub>home-central oder direkte Abfragen</div>"
+            "<div class=st style='margin-top:0'>%s</div>"
+            "<form method=post action=/hcmode>"
+            "<label>Modus (Neustart)</label><select name=src>"
+            "<option value=auto%s>Automatisch: home-central suchen und nutzen</option>"
+            "<option value=direct%s>Nur direkte Abfragen (wie bisher)</option></select>"
+            "<button type=submit>Speichern &amp; Neustart</button></form>"
+            "%s</div>",
+            hst, direct ? "" : " selected", direct ? " selected" : "",
+            hc_cl ? "<form method=post action=/hcmode><input type=hidden name=src value=unpair>"
+                    "<button type=submit style='background:#5a6478'>Kopplung l\xc3\xb6sen &amp; neu suchen</button></form>" : "");
+        httpd_resp_sendstr_chunk(req, hcard);
+    }
+    if (hc_cl) {
+        // Im Client-Modus verwaltet home-central Anzeige und Datenquellen.
+        httpd_resp_sendstr_chunk(req,
+            "<div class=card style='margin-top:16px'><h1>Einstellungen</h1>"
+            "<div class=st style='margin-top:0'>Anzeige (Helligkeit, Slides, Intervall, Drehung), Termine, "
+            "M\xc3\xbcll, Wetter, Warnungen, Flugzeuge, Nachtobjekte, Feiertage und Telegram werden jetzt "
+            "auf <b>home-central</b> eingestellt (Weboberfl\xc3\xa4" "che von home-central).</div></div>");
+    } else {
+
     // --- Anzeige-Card: Helligkeit + Drehung + Slide-Auswahl + Intervall ---
     int bright = config_get_int("brightness", 100);
     int bl_floor = config_get_int("bl_floor", 80);
@@ -250,19 +283,116 @@ static esp_err_t settings_get(httpd_req_t *req)
         fbesc);
     httpd_resp_sendstr_chunk(req, card);
 
-    // --- Muell-Card (jumomind Ortsteil-ID) ---
-    char muellid[16]; config_get_str_def("muell_id", muellid, sizeof(muellid), "44886");
-    char muellid_esc[24]; html_escape(muellid, muellid_esc, sizeof(muellid_esc));
-    snprintf(card, sizeof(card),
-        "<div class=card style='margin-top:16px'>"
-        "<h1>M\xc3\xbcll</h1><div class=sub>Ortsteil-ID (jumomind / MyM\xc3\xbcll)</div>"
-        "<form method=post action=/muell>"
-        "<input type=text name=id value=\"%s\" placeholder='z.B. 44886'>"
-        "<button type=submit>Speichern</button></form>"
-        "<div class=st>Standard 44886 = Johannesberg-Oberafferbach. Andere: Johannesberg 29018, "
-        "Breunsberg 7639, R\xc3\xbc" "ckersbach 53323, Steinbach 59146, Sternberg 59533.</div></div>",
-        muellid_esc);
-    httpd_resp_sendstr_chunk(req, card);
+    // --- Muell-Card: Quelle MyMuell (jumomind) ODER AWIDO (Abfall-App) ---
+    // Nur EINE Quelle aktiv; Wechsel/ID-Aenderung -> Neustart (siehe muell_post).
+    {
+        static EXT_RAM_BSS_ATTR char mc[2048];   // PSRAM
+        // static/PSRAM: Settings-Handler-Stack ist knapp (siehe aps/card oben)
+        static EXT_RAM_BSS_ATTR char src[12], mid[16], cl[40], oid[48], ort[64], lbl[128], stat[128];
+        config_get_str_def("muell_src", src, sizeof(src), MUELL_DEF_SRC);
+        config_get_str_def("muell_id", mid, sizeof(mid), MUELL_DEF_ID);
+        config_get_str_def("muell_aw_cl", cl, sizeof(cl), MUELL_DEF_AW_CL);
+        config_get_str_def("muell_aw_id", oid, sizeof(oid), MUELL_DEF_AW_ID);
+        config_get_str_def("muell_aw_ort", ort, sizeof(ort), MUELL_DEF_AW_ORT);
+        config_get_str_def("muell_aw_lbl", lbl, sizeof(lbl), MUELL_DEF_AW_LBL);
+        muell_status(stat, sizeof(stat));
+        bool aw = strcmp(src, "awido") == 0;
+        static EXT_RAM_BSS_ATTR char mid_e[24], cl_e[64], oid_e[64], ort_e[96], lbl_e[192];
+        html_escape(mid, mid_e, sizeof(mid_e));
+        html_escape(cl, cl_e, sizeof(cl_e));
+        html_escape(oid, oid_e, sizeof(oid_e));
+        html_escape(ort, ort_e, sizeof(ort_e));
+        html_escape(lbl, lbl_e, sizeof(lbl_e));
+        snprintf(mc, sizeof(mc),
+            "<div class=card style='margin-top:16px'>"
+            "<h1>M\xc3\xbcll</h1><div class=sub>Abfuhrtermine &ndash; Datenquelle</div>"
+            "<div class=st style='margin-top:0'>%s</div>"
+            "<form method=post action=/muell onsubmit='return mSub()'>"
+            "<label>Datenquelle</label>"
+            "<select name=src id=msrc onchange=mSrc()>"
+            "<option value=mymuell%s>MyM\xc3\xbcll (jumomind)</option>"
+            "<option value=awido%s>Abfall-App (AWIDO / cubefour)</option></select>"
+            "<div id=mmy%s>"
+            "<label>Ortsteil-ID (MyM\xc3\xbcll)</label>"
+            "<input type=text name=id value=\"%s\" placeholder='z.B. 44886'>"
+            "<div class=st>Standard 44886 = Johannesberg-Oberafferbach. Andere: Johannesberg 29018, "
+            "Breunsberg 7639, R\xc3\xbc" "ckersbach 53323, Steinbach 59146, Sternberg 59533.<br>"
+            "Hinweis: Der Landkreis Aschaffenburg bedient MyM\xc3\xbcll nur noch bis 31.12.2026.</div></div>"
+            "<div id=maw%s>"
+            "<div class=st>Aktuell: %s</div>"
+            "<label>Mandant (Landkreis / Stadt)</label><select id=mcl onchange=mCl(0)>",
+            stat, aw ? "" : " selected", aw ? " selected" : "", aw ? " style=display:none" : "",
+            mid_e, aw ? "" : " style=display:none", lbl_e);
+        httpd_resp_sendstr_chunk(req, mc);
+
+        bool known = false;
+        for (int i = 0; i < muell_awido_catalog_count(); i++) {
+            const char *id = muell_awido_catalog_id(i);
+            bool sel = strcmp(id, cl) == 0;
+            known |= sel;
+            snprintf(mc, sizeof(mc), "<option value=%s%s>%s</option>", id, sel ? " selected" : "",
+                     muell_awido_catalog_title(i));
+            httpd_resp_sendstr_chunk(req, mc);
+        }
+        snprintf(mc, sizeof(mc),
+            "<option value=_%s>Anderer Mandant (K\xc3\xbcrzel eingeben) &hellip;</option></select>"
+            "<input type=text id=mclx value=\"%s\" placeholder='K\xc3\xbcrzel, z.B. lra-ab' "
+            "onchange=mCl(0)%s>"
+            "<label>Gemeinde</label><select id=mpl onchange=mPl(0)></select>"
+            "<label>Ortsteil / Stra\xc3\x9f" "e</label><select id=mst onchange=mSt()></select>"
+            "<div id=mhw style=display:none><label>Hausnummer</label>"
+            "<select id=mhn onchange=mHn()></select></div>"
+            "<label>AWIDO-ID (wird durch die Auswahl gesetzt)</label>"
+            "<input type=text name=oid id=moid value=\"%s\">"
+            "<input type=hidden name=cl id=mclv value=\"%s\">"
+            "<input type=hidden name=ort id=mort value=\"%s\">"
+            "<input type=hidden name=lbl id=mlbl value=\"%s\">"
+            "<div class=st id=mmsg></div></div>"
+            "<button type=submit>Speichern (Neustart bei \xc3\x84nderung)</button></form></div>",
+            known ? "" : " selected", known ? "" : cl_e, known ? " style=display:none" : "",
+            oid_e, cl_e, ort_e, lbl_e);
+        httpd_resp_sendstr_chunk(req, mc);
+
+        // Kaskade Mandant -> Gemeinde -> Ortsteil/Strasse -> Hausnummer ueber /api/awido
+        // (Geraet reicht die AWIDO-Abfragen durch). Beim ersten Oeffnen werden die
+        // gespeicherten Werte vorausgewaehlt, ohne sie zu ueberschreiben.
+        httpd_resp_sendstr_chunk(req,
+            "<script>"
+            "var mI=0;function g(i){return document.getElementById(i)}"
+            "function mSrc(){var a=g('msrc').value=='awido';g('mmy').style.display=a?'none':'';"
+            "g('maw').style.display=a?'':'none';if(a&&!mI){mI=1;mCl(1)}}"
+            "function mClient(){var v=g('mcl').value;g('mclx').style.display=v=='_'?'':'none';"
+            "return v=='_'?g('mclx').value.trim().toLowerCase():v}"
+            "function mFill(s,l,p){s.innerHTML='';var o=document.createElement('option');o.value='';o.textContent=p;s.appendChild(o);"
+            "l.forEach(function(e){var o=document.createElement('option');o.value=e.key;o.textContent=e.value||'(alle)';s.appendChild(o)})}"
+            "function mGet(st,id,cb){var c=mClient();if(!c)return;g('mmsg').textContent='Lade …';"
+            "fetch('/api/awido?step='+st+'&client='+encodeURIComponent(c)+(id?'&id='+id:''))"
+            ".then(function(r){if(!r.ok)throw 0;return r.json()})"
+            ".then(function(l){g('mmsg').textContent='';cb(l)})"
+            ".catch(function(){g('mmsg').textContent='Abruf fehlgeschlagen – Mandant/Verbindung prüfen.'})}"
+            "function mTxt(s){return s.selectedIndex>0?s.options[s.selectedIndex].textContent:''}"
+            "function mUpd(){var m=g('mcl'),t=m.value=='_'?mClient():mTxt(m),p=mTxt(g('mpl')),s=mTxt(g('mst')),h=mTxt(g('mhn'));"
+            "g('mclv').value=mClient();g('mort').value=p;"
+            "g('mlbl').value=[t,p,s].filter(function(x){return x}).join(' / ')+(g('mhw').style.display==''&&h?' '+h:'')}"
+            "function mCl(i){['mpl','mst','mhn'].forEach(function(x){g(x).innerHTML=''});g('mhw').style.display='none';"
+            "if(!i){g('mort').value='';g('moid').value='';mUpd()}"
+            "mGet('places',0,function(l){mFill(g('mpl'),l,'– Gemeinde wählen –');"
+            "if(i){var o=[].find.call(g('mpl').options,function(o){return o.textContent==g('mort').value});"
+            "if(o){o.selected=true;mPl(1)}}})}"
+            "function mPl(i){g('mst').innerHTML='';g('mhn').innerHTML='';g('mhw').style.display='none';var k=g('mpl').value;if(!k)return;"
+            "mGet('streets',k,function(l){mFill(g('mst'),l,'– Ortsteil/Straße wählen –');"
+            "if(i){var o=[].find.call(g('mst').options,function(o){return o.value&&o.value==g('moid').value});if(o)o.selected=true}"
+            "else if(l.length==1){g('mst').selectedIndex=1;mSt()}})}"
+            "function mSt(){var k=g('mst').value;g('mhn').innerHTML='';g('mhw').style.display='none';if(!k)return;"
+            "g('moid').value=k;mUpd();"
+            "mGet('addons',k,function(l){if(l.length>1||(l.length==1&&l[0].value)){mFill(g('mhn'),l,'– Hausnummer wählen –');"
+            "g('mhw').style.display='';mUpd()}})}"
+            "function mHn(){var k=g('mhn').value;g('moid').value=k||g('mst').value;mUpd()}"
+            "function mSub(){if(g('msrc').value=='awido'){g('mclv').value=mClient();"
+            "if(!g('mclv').value||!g('moid').value){alert('Bitte Mandant und Ort wählen.');return false}}return true}"
+            "if(g('msrc').value=='awido')mSrc();"
+            "</script>");
+    }
 
     // --- Warnungen-Card (BBK/NINA Regionalschluessel) ---
     char ars[16]; config_get_str_def("nina_ars", ars, sizeof(ars), "096710000000");
@@ -397,6 +527,8 @@ static esp_err_t settings_get(httpd_req_t *req)
         tgchat_esc,
         has_tok ? "Token aktuell konfiguriert." : "");
     httpd_resp_sendstr_chunk(req, card);
+
+    }   // Ende: Karten nur im Direkt-Modus
 
     // --- Firmware-Update-Card (OTA) ---
     httpd_resp_sendstr_chunk(req,
@@ -752,18 +884,123 @@ static esp_err_t factory_post(httpd_req_t *req)
 
 static esp_err_t muell_post(httpd_req_t *req)
 {
+    char body[1024];
+    int total = req->content_len < (int)sizeof(body) - 1 ? req->content_len : (int)sizeof(body) - 1;
+    int recvd = total > 0 ? httpd_req_recv(req, body, total) : 0;
+    if (recvd < 0) return ESP_FAIL;
+    body[recvd > 0 ? recvd : 0] = '\0';
+
+    char src[12] = { 0 }, id[16] = { 0 }, cl[40] = { 0 }, oid[48] = { 0 }, ort[64] = { 0 }, lbl[128] = { 0 };
+    form_field(body, "src", src, sizeof(src));
+    form_field(body, "id", id, sizeof(id));
+    form_field(body, "cl", cl, sizeof(cl));
+    form_field(body, "oid", oid, sizeof(oid));
+    form_field(body, "ort", ort, sizeof(ort));
+    form_field(body, "lbl", lbl, sizeof(lbl));
+    bool aw = strcmp(src, "awido") == 0;
+    if (!id[0]) strcpy(id, MUELL_DEF_ID);
+
+    if (aw && !muell_awido_valid(cl, oid)) {
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_set_type(req, "text/html; charset=utf-8");
+        httpd_resp_sendstr(req, "Ung\xc3\xbcltiger AWIDO-Mandant oder -ID - nichts gespeichert. "
+                                "<a href=/settings>Zur\xc3\xbc" "ck</a>");
+        return ESP_OK;
+    }
+
+    // Vorher-Stand: Neustart nur, wenn sich Quelle oder ID der aktiven Quelle aendert.
+    char o_src[12], o_id[16], o_cl[40], o_oid[48];
+    config_get_str_def("muell_src", o_src, sizeof(o_src), MUELL_DEF_SRC);
+    config_get_str_def("muell_id", o_id, sizeof(o_id), MUELL_DEF_ID);
+    config_get_str_def("muell_aw_cl", o_cl, sizeof(o_cl), MUELL_DEF_AW_CL);
+    config_get_str_def("muell_aw_id", o_oid, sizeof(o_oid), MUELL_DEF_AW_ID);
+    bool changed = strcmp(o_src, aw ? "awido" : "mymuell") != 0 ||
+                   (aw ? (strcmp(o_cl, cl) != 0 || strcmp(o_oid, oid) != 0)
+                       : strcmp(o_id, id) != 0);
+
+    // Beide Parametersaetze bleiben gespeichert -> Hin-/Herwechseln ohne Neueingabe.
+    config_set_str("muell_src", aw ? "awido" : "mymuell");
+    config_set_str("muell_id", id);
+    if (aw) {
+        config_set_str("muell_aw_cl", cl);
+        config_set_str("muell_aw_id", oid);
+        config_set_str("muell_aw_ort", ort);
+        config_set_str("muell_aw_lbl", lbl[0] ? lbl : cl);
+    }
+    ESP_LOGI(TAG, "Muell: Quelle %s, %s%s", aw ? "AWIDO" : "MyMuell", aw ? lbl : id,
+             changed ? " -> Neustart" : " (unveraendert)");
+    if (!changed) return redirect_settings(req);
+
+    // Quelle wird nur beim Start gewaehlt -> Neustart, damit nie beide abgefragt werden.
+    httpd_resp_set_type(req, "text/html; charset=utf-8");
+    httpd_resp_sendstr(req,
+        "<!doctype html><meta charset=utf-8><meta http-equiv=refresh content='20;url=/settings'>"
+        "<body style='font-family:sans-serif;background:#101830;color:#eee;padding:24px'>"
+        "<h2>Gespeichert.</h2><p>Das Ger\xc3\xa4t startet neu und nutzt ab jetzt die gew\xc3\xa4hlte "
+        "M\xc3\xbcll-Datenquelle.</p></body>");
+    vTaskDelay(pdMS_TO_TICKS(800));
+    esp_restart();
+    return ESP_OK;
+}
+
+// Datenquelle umstellen (auto = home-central suchen/nutzen, direct = wie bisher)
+// bzw. Kopplung loesen. Die Betriebsart gilt ab dem Neustart.
+static esp_err_t hcmode_post(httpd_req_t *req)
+{
     char body[64];
     int total = req->content_len < (int)sizeof(body) - 1 ? req->content_len : (int)sizeof(body) - 1;
     int recvd = total > 0 ? httpd_req_recv(req, body, total) : 0;
     if (recvd < 0) return ESP_FAIL;
     body[recvd > 0 ? recvd : 0] = '\0';
 
-    char id[16] = { 0 };
-    form_field(body, "id", id, sizeof(id));
-    config_set_str("muell_id", id[0] ? id : "44886");
-    muell_refresh();   // sofort mit neuer ID neu abrufen (kein Neustart noetig)
-    ESP_LOGI(TAG, "Muell-Ortsteil-ID gesetzt: %s", id[0] ? id : "44886");
-    return redirect_settings(req);
+    char src[12] = { 0 };
+    form_field(body, "src", src, sizeof(src));
+    if (strcmp(src, "unpair") == 0) {
+        config_set_str("hc_token", "");
+        config_set_str("hc_url", "");
+        config_set_str("data_src", "auto");
+    } else if (strcmp(src, "direct") == 0 || strcmp(src, "auto") == 0) {
+        config_set_str("data_src", src);
+    } else {
+        return redirect_settings(req);
+    }
+    ESP_LOGI(TAG, "Datenquelle: %s -> Neustart", src);
+    httpd_resp_set_type(req, "text/html; charset=utf-8");
+    httpd_resp_sendstr(req,
+        "<!doctype html><meta charset=utf-8><meta http-equiv=refresh content='20;url=/settings'>"
+        "<body style='font-family:sans-serif;background:#101830;color:#eee;padding:24px'>"
+        "<h2>Gespeichert.</h2><p>Das Ger\xc3\xa4t startet neu.</p></body>");
+    vTaskDelay(pdMS_TO_TICKS(800));
+    esp_restart();
+    return ESP_OK;
+}
+
+// AWIDO-Auswahllisten fuer die Muell-Card (Geraet reicht nur diese 3 Abfragen
+// durch, Mandant/ID werden in muell_awido_lookup() validiert -> kein offener Proxy).
+static esp_err_t awido_get(httpd_req_t *req)
+{
+    char q[160] = { 0 }, step[12] = { 0 }, client[40] = { 0 }, id[48] = { 0 };
+    httpd_req_get_url_query_str(req, q, sizeof(q));
+    httpd_query_key_value(q, "step", step, sizeof(step));
+    httpd_query_key_value(q, "client", client, sizeof(client));
+    httpd_query_key_value(q, "id", id, sizeof(id));
+
+    // Strassenliste einer Grossstadt ist gross (Regensburg ~97 KB) -> PSRAM, nur temporaer.
+    const size_t len = 192 * 1024;
+    char *buf = heap_caps_malloc(len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!buf) { httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "kein Speicher"); return ESP_OK; }
+    int n = muell_awido_lookup(step, client, id, buf, len);
+    if (n < 0) {
+        free(buf);
+        httpd_resp_set_status(req, "502 Bad Gateway");
+        httpd_resp_sendstr(req, "AWIDO-Abfrage fehlgeschlagen");
+        return ESP_OK;
+    }
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    httpd_resp_send(req, buf, n);
+    free(buf);
+    return ESP_OK;
 }
 
 static esp_err_t nina_post(httpd_req_t *req)
@@ -998,6 +1235,8 @@ void web_server_start(void)
     httpd_uri_t disp = { .uri = "/display", .method = HTTP_POST, .handler = display_post };
     httpd_uri_t fb   = { .uri = "/fritzbox", .method = HTTP_POST, .handler = fritzbox_post };
     httpd_uri_t mue  = { .uri = "/muell", .method = HTTP_POST, .handler = muell_post };
+    httpd_uri_t awi  = { .uri = "/api/awido", .method = HTTP_GET, .handler = awido_get };
+    httpd_uri_t hcm  = { .uri = "/hcmode", .method = HTTP_POST, .handler = hcmode_post };
     httpd_uri_t nna  = { .uri = "/nina", .method = HTTP_POST, .handler = nina_post };
     httpd_uri_t tadd = { .uri = "/tadd", .method = HTTP_POST, .handler = tadd_post };
     httpd_uri_t tdel = { .uri = "/tdel", .method = HTTP_POST, .handler = tdel_post };
@@ -1024,6 +1263,8 @@ void web_server_start(void)
     httpd_register_uri_handler(server, &disp);
     httpd_register_uri_handler(server, &fb);
     httpd_register_uri_handler(server, &mue);
+    httpd_register_uri_handler(server, &awi);
+    httpd_register_uri_handler(server, &hcm);
     httpd_register_uri_handler(server, &nna);
     httpd_register_uri_handler(server, &tadd);
     httpd_register_uri_handler(server, &tdel);

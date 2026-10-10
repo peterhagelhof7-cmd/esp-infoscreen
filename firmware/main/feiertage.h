@@ -19,3 +19,6 @@ typedef struct {
 // Jahr (deckt den Jahreswechsel ab) in out. Liefert die Anzahl (0, wenn kein/
 // ungueltiges Bundesland oder die Uhr noch nicht per NTP steht).
 int feiertage_get(feiertag_t *out, int max);
+
+// Client-Modus: Feiertage von home-central setzen; feiertage_get liefert dann diese.
+void feiertage_set_remote(const feiertag_t *list, int n);

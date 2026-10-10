@@ -1,5 +1,6 @@
 #include "dwd.h"
 #include "http_util.h"
+#include "hc_client.h"
 
 #include <string.h>
 #include "freertos/FreeRTOS.h"
@@ -61,6 +62,7 @@ void dwd_init(void)
 {
     s_lock = xSemaphoreCreateMutex();
     memset(&s_data, 0, sizeof(s_data));
+    if (hc_mode() == HC_MODE_CLIENT) return;
     xTaskCreate(poll_task, "dwd", 6144, NULL, 3, NULL);   // gemessen ~2 KB Reserve
 }
 
@@ -69,5 +71,14 @@ void dwd_get(dwd_data_t *out)
     if (!s_lock) { memset(out, 0, sizeof(*out)); return; }
     xSemaphoreTake(s_lock, portMAX_DELAY);
     *out = s_data;
+    xSemaphoreGive(s_lock);
+}
+
+// Client-Modus: Daten von home-central uebernehmen (statt eigenem Abruf).
+void dwd_set(const dwd_data_t *d)
+{
+    if (!s_lock || !d) return;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_data = *d;
     xSemaphoreGive(s_lock);
 }

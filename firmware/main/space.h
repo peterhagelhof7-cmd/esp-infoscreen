@@ -52,3 +52,6 @@ void space_get_neos(neos_t *out);
 // Poller sofort neu abrufen lassen (nicht-blockierend, per Task-Notify) -
 // z.B. nachdem im Web ein API-Key gesetzt wurde.
 void space_wake(void);
+
+// Client-Modus: Daten von home-central setzen.
+void space_set(const sat_passes_t *passes, const neos_t *neos);

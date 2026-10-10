@@ -31,3 +31,6 @@ int telegram_get_history(tg_msg_t *out, int max);
 
 // Zaehler, der bei jeder neuen Nachricht hochzaehlt (fuer Refresh-Erkennung).
 unsigned telegram_history_version(void);
+
+// Client-Modus: Verlauf von home-central setzen (kein eigener Bot).
+void telegram_set_remote(const tg_msg_t *msgs, int n, unsigned version, bool configured);

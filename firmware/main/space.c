@@ -1,4 +1,5 @@
 #include "space.h"
+#include "hc_client.h"
 #include "http_util.h"
 #include "config_store.h"
 #include "time_sync.h"
@@ -234,6 +235,7 @@ void space_init(void)
     s_gate = xSemaphoreCreateMutex();
     memset(&s_passes, 0, sizeof(s_passes));
     memset(&s_neos, 0, sizeof(s_neos));
+    if (hc_mode() == HC_MODE_CLIENT) return;
     xTaskCreate(poll_task, "space", 7168, NULL, 3, &s_task);
 }
 
@@ -255,5 +257,15 @@ void space_get_neos(neos_t *out)
     if (!s_lock) { memset(out, 0, sizeof(*out)); return; }
     xSemaphoreTake(s_lock, portMAX_DELAY);
     *out = s_neos;
+    xSemaphoreGive(s_lock);
+}
+
+// Client-Modus: Daten von home-central uebernehmen (statt eigenem Abruf).
+void space_set(const sat_passes_t *passes, const neos_t *neos)
+{
+    if (!s_lock) return;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    if (passes) s_passes = *passes;
+    if (neos) s_neos = *neos;
     xSemaphoreGive(s_lock);
 }

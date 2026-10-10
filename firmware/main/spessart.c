@@ -1,5 +1,6 @@
 #include "spessart.h"
 #include "http_util.h"
+#include "hc_client.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -124,6 +125,7 @@ void spessart_init(void)
 {
     s_lock = xSemaphoreCreateMutex();
     memset(&s_data, 0, sizeof(s_data));
+    if (hc_mode() == HC_MODE_CLIENT) return;
     xTaskCreate(poll_task, "spessart", 6144, NULL, 3, NULL);   // gemessen ~2 KB Reserve
 }
 
@@ -142,4 +144,13 @@ double spessart_gust_kmh(const spessart_data_t *d)
     strncpy(tmp, d->gust, sizeof(tmp) - 1); tmp[sizeof(tmp) - 1] = '\0';
     for (char *c = tmp; *c; c++) if (*c == ',') *c = '.';   // deutsches Komma
     return atof(tmp);
+}
+
+// Client-Modus: Daten von home-central uebernehmen (statt eigenem Abruf).
+void spessart_set(const spessart_data_t *d)
+{
+    if (!s_lock || !d) return;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_data = *d;
+    xSemaphoreGive(s_lock);
 }

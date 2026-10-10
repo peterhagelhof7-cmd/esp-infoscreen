@@ -13,3 +13,6 @@ void dwd_init(void);
 
 // Threadsichere Kopie der zuletzt abgefragten Warnlage.
 void dwd_get(dwd_data_t *out);
+
+// Client-Modus: Daten von home-central setzen.
+void dwd_set(const dwd_data_t *d);

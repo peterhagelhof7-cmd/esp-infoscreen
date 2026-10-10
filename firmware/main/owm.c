@@ -2,6 +2,7 @@
 #include "http_util.h"
 #include "config_store.h"
 #include "time_sync.h"
+#include "hc_client.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -297,12 +298,13 @@ void owm_init(void)
     s_lock = xSemaphoreCreateMutex();
     s_poll_gate = xSemaphoreCreateMutex();
     memset(&s_data, 0, sizeof(s_data));
+    if (hc_mode() == HC_MODE_CLIENT) return;   // Daten kommen von home-central
     xTaskCreate(poll_task, "owm", 6144, NULL, 3, NULL);   // gemessen ~2,3 KB Reserve
 }
 
 void owm_refresh(void)
 {
-    if (!s_poll_gate) return;
+    if (!s_poll_gate || hc_mode() == HC_MODE_CLIENT) return;
     xSemaphoreTake(s_poll_gate, portMAX_DELAY);
     poll_current();
     if (time_sync_is_valid()) poll_forecast();
@@ -314,5 +316,14 @@ void owm_get(owm_data_t *out)
     if (!s_lock) { memset(out, 0, sizeof(*out)); return; }
     xSemaphoreTake(s_lock, portMAX_DELAY);
     *out = s_data;
+    xSemaphoreGive(s_lock);
+}
+
+// Client-Modus: Daten von home-central uebernehmen (statt eigenem Abruf).
+void owm_set(const owm_data_t *d)
+{
+    if (!s_lock || !d) return;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_data = *d;
     xSemaphoreGive(s_lock);
 }

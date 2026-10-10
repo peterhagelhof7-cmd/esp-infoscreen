@@ -1,4 +1,5 @@
 #include "fritzbox.h"
+#include "hc_client.h"
 #include "config_store.h"
 
 #include <string.h>
@@ -147,6 +148,7 @@ void fritzbox_init(void)
 {
     s_lock = xSemaphoreCreateMutex();
     memset(&s_data, 0, sizeof(s_data));
+    if (hc_mode() == HC_MODE_CLIENT) return;
     xTaskCreate(poll_task, "fritzbox", 4096, NULL, 3, NULL);   // gemessen ~1,4 KB Reserve
 }
 
@@ -155,5 +157,14 @@ void fritzbox_get(fritzbox_data_t *out)
     if (!s_lock) { memset(out, 0, sizeof(*out)); return; }
     xSemaphoreTake(s_lock, portMAX_DELAY);
     *out = s_data;
+    xSemaphoreGive(s_lock);
+}
+
+// Client-Modus: Daten von home-central uebernehmen (statt eigenem Abruf).
+void fritzbox_set(const fritzbox_data_t *d)
+{
+    if (!s_lock || !d) return;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_data = *d;
     xSemaphoreGive(s_lock);
 }

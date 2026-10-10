@@ -21,6 +21,7 @@
 #include "kino.h"
 #include "dht22.h"
 #include "kurse.h"
+#include "hc_client.h"
 
 #include <stdlib.h>
 #include "esp_log.h"
@@ -52,6 +53,7 @@ void app_main(void)
 
     ota_manager_init();
     config_store_init();
+    hc_client_early_init();   // Datenquelle festlegen: direkt oder home-central (vor allen Modulen)
 
     // Gespeicherte Anzeige-Drehung (Deckenmontage 180 Grad) beim Init anwenden
     char rot[4];
@@ -91,6 +93,9 @@ void app_main(void)
     if (sec < 3) sec = 3;
     if (sec > 120) sec = 120;
     slideshow_start((uint32_t)sec * 1000);
+
+    // home-central: im Client-Modus Daten abrufen, sonst (data_src auto/hc) suchen + koppeln
+    hc_client_start();
 
     // Init erfolgreich -> Rollback abbrechen (frisch geflashte App gilt als ok)
     ota_manager_mark_valid();

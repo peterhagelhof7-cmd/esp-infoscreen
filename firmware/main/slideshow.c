@@ -5,7 +5,7 @@
 #include "esp_timer.h"
 #include "esp_lvgl_port.h"
 
-#define MAX_SLIDES 16
+#define MAX_SLIDES 32   // Katalog waechst mit neuen Slides (siehe slides.c ALL_SLIDES)
 
 static const slide_t *s_slides[MAX_SLIDES];
 static int s_count;
@@ -14,7 +14,8 @@ static int s_current;
 static lv_obj_t *s_title;
 static lv_obj_t *s_content;
 static lv_obj_t *s_footer;
-static lv_obj_t *s_countdown;      // Sekunden bis zum naechsten Slide (untere Ecke)
+static lv_obj_t *s_countdown;
+static lv_obj_t *s_status;         // Hinweiszeile unten links (Client-Modus: Server weg)      // Sekunden bis zum naechsten Slide (untere Ecke)
 static uint32_t  s_interval_ms;    // Wechselintervall
 static int64_t   s_slide_start_us; // Startzeitpunkt des aktuellen Slides
 static int       s_last_rem = -1;  // zuletzt angezeigter Countdown (nur bei Aenderung neu zeichnen)
@@ -96,6 +97,12 @@ void slideshow_init(lv_display_t *disp)
     lv_label_set_text(s_countdown, "");
     lv_obj_align(s_countdown, LV_ALIGN_BOTTOM_RIGHT, -16, -16);
 
+    s_status = lv_label_create(scr);
+    lv_obj_set_style_text_font(s_status, &montserrat_de_14, 0);
+    lv_obj_set_style_text_color(s_status, lv_color_hex(0xf5a742), 0);
+    lv_label_set_text(s_status, "");
+    lv_obj_align(s_status, LV_ALIGN_BOTTOM_LEFT, 16, -16);
+
     lvgl_port_unlock();
 }
 
@@ -111,5 +118,13 @@ void slideshow_start(uint32_t interval_ms)
     show_slide(0);
     lv_timer_create(switch_cb, interval_ms, NULL);
     lv_timer_create(tick_cb, 1000, NULL);
+    lvgl_port_unlock();
+}
+
+void slideshow_set_status(const char *text)
+{
+    if (!s_status) return;
+    lvgl_port_lock(0);
+    lv_label_set_text(s_status, text ? text : "");
     lvgl_port_unlock();
 }

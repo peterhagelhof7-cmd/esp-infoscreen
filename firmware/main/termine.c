@@ -1,5 +1,9 @@
 #include "termine.h"
 #include "config_store.h"
+#include "hc_client.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include "esp_attr.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -37,8 +41,30 @@ static bool save_array(cJSON *arr)
     return ok;
 }
 
+static EXT_RAM_BSS_ATTR termine_entry_t s_remote[MAX_TERMINE];   // Client-Modus (PSRAM)
+static int s_remote_n;
+static SemaphoreHandle_t s_remote_lock;
+
+void termine_set_remote(const termine_entry_t *list, int n)
+{
+    if (!s_remote_lock) return;
+    if (n > MAX_TERMINE) n = MAX_TERMINE;
+    xSemaphoreTake(s_remote_lock, portMAX_DELAY);
+    memcpy(s_remote, list, n * sizeof(termine_entry_t));
+    s_remote_n = n;
+    xSemaphoreGive(s_remote_lock);
+}
+
 int termine_get_all(termine_entry_t *out, int max)
 {
+    if (hc_mode() == HC_MODE_CLIENT) {
+        if (!s_remote_lock) return 0;
+        xSemaphoreTake(s_remote_lock, portMAX_DELAY);
+        int n = s_remote_n < max ? s_remote_n : max;
+        memcpy(out, s_remote, n * sizeof(termine_entry_t));
+        xSemaphoreGive(s_remote_lock);
+        return n;
+    }
     cJSON *arr = load_array();
     int n = 0;
     cJSON *e;
@@ -116,6 +142,10 @@ static void purge_timer_cb(void *arg)
 
 void termine_init(void)
 {
+    if (hc_mode() == HC_MODE_CLIENT) {   // Termine verwaltet home-central
+        s_remote_lock = xSemaphoreCreateMutex();
+        return;
+    }
     termine_purge_past();   // sofort (falls Zeit schon da), sonst greift der Timer
     const esp_timer_create_args_t ta = { .callback = purge_timer_cb, .name = "termine_purge" };
     esp_timer_handle_t th;

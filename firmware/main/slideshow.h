@@ -15,3 +15,7 @@ typedef struct {
 void slideshow_init(lv_display_t *disp);          // Grundgeruest (Titel/Inhalt/Fusszeile)
 void slideshow_add(const slide_t *slide);         // Slide registrieren
 void slideshow_start(uint32_t interval_ms);       // Rotation starten
+
+// Hinweiszeile unten links (z.B. "home-central nicht erreichbar"); NULL = aus.
+// Aus beliebigem Task aufrufbar (nimmt den LVGL-Lock).
+void slideshow_set_status(const char *text);

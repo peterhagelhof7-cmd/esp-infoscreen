@@ -16,7 +16,8 @@ genutzten Datenquellen).
 
 - **Uhr & Datum** – per NTP synchronisiert (Zeitzone Deutschland, Sommer-/Winterzeit)
 - **Wetter (OpenWeatherMap)** – aktuelle Werte + **Wetter-Icons** und 3-Tage-Vorhersage
-- **Kalender / Termine** – selbst angelegte Termine **plus Müllabfuhr**, nach Datum sortiert
+- **Kalender / Termine** – selbst angelegte Termine **plus Müllabfuhr** (Quelle wählbar: MyMüll
+  oder Abfall-App/AWIDO mit Auswahl Mandant → Gemeinde → Ortsteil/Straße), nach Datum sortiert
 - **Warnungen** – amtliche **Katastrophen-/Bevölkerungsschutz-Warnungen (BBK/NINA)** und
   **DWD-Wetterwarnungen** (Bright Sky), farbcodiert nach Stufe
 - **Spessartwetter** – Temperatur/Wind **inkl. Windböen** von spessartwetter.de, mit Messzeitpunkt
@@ -40,12 +41,17 @@ genutzten Datenquellen).
 
 - **Message Board** als Startseite, Einstellungen hinter dem ⚙-Button
 - Gerätename, Helligkeit, Slide-Auswahl & -Intervall, 180°-Drehung (Deckenmontage)
-- OpenWeatherMap-Key & -Standort, Müll-Ortsteil, Warngebiet (BBK/NINA), Fritzbox-Adresse, Telegram-Zugang
+- OpenWeatherMap-Key & -Standort, Müll-Quelle (MyMüll oder Abfall-App/AWIDO) + Ortsteil, Warngebiet (BBK/NINA), Fritzbox-Adresse, Telegram-Zugang
 - Termine anlegen/löschen · **Status** (Uptime/Heap/WLAN) · **Einstellungen sichern/laden**
 - **Firmware-Update (OTA)** · Neustart · **Werksreset**
 
 **Sonstiges:** echte Umlaute (eigene Fonts), Erreichbarkeit per **mDNS** (`.local`),
 Erstsetup per **Einrichtungs-AP**, **OTA mit automatischem Rollback**.
+
+**Datenquelle home-central (ab v1.3.0, optional):** Der Infoscreen findet den Server
+[home-central](../home-central) per mDNS, koppelt sich nach einer Freigabe und bezieht dann alle Daten,
+die Anzeige-Einstellungen und die Uhrzeit von dort – ohne eigene Internet-Abrufe und ohne eigenen Bot.
+Fällt der Server aus, bleiben die letzten Daten mit Hinweis stehen. Details: `docs/admin-guide.md` 2.4.
 
 ## Hardware
 

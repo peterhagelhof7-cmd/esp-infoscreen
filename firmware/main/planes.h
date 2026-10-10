@@ -40,3 +40,6 @@ void planes_get(planes_data_t *out);
 // Sofortiger Abruf im aufrufenden Task, blockiert bis fertig. Fuer das
 // Telegram-Kommando "planes". Serialisiert mit dem Hintergrund-Poller.
 void planes_refresh(void);
+
+// Client-Modus: Daten von home-central setzen.
+void planes_set(const planes_data_t *d);

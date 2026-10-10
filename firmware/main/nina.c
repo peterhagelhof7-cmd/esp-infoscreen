@@ -1,5 +1,6 @@
 #include "nina.h"
 #include "http_util.h"
+#include "hc_client.h"
 #include "config_store.h"
 
 #include <string.h>
@@ -102,6 +103,7 @@ void nina_init(void)
 {
     s_lock = xSemaphoreCreateMutex();
     memset(&s_data, 0, sizeof(s_data));
+    if (hc_mode() == HC_MODE_CLIENT) return;
     xTaskCreate(poll_task, "nina", 6144, NULL, 3, &s_task);   // gemessen ~1,8 KB Reserve
 }
 
@@ -116,4 +118,13 @@ void nina_get(nina_data_t *out)
 void nina_refresh(void)
 {
     if (s_task) xTaskNotifyGive(s_task);
+}
+
+// Client-Modus: Daten von home-central uebernehmen (statt eigenem Abruf).
+void nina_set(const nina_data_t *d)
+{
+    if (!s_lock || !d) return;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_data = *d;
+    xSemaphoreGive(s_lock);
 }

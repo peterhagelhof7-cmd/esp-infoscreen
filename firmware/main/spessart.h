@@ -16,5 +16,8 @@ void spessart_init(void);
 // Threadsichere Kopie der zuletzt gescrapten Werte.
 void spessart_get(spessart_data_t *out);
 
+// Client-Modus: Daten von home-central setzen.
+void spessart_set(const spessart_data_t *d);
+
 // Boeen als Zahl (km/h) aus dem String (Komma->Punkt). 0, wenn leer/ungueltig.
 double spessart_gust_kmh(const spessart_data_t *d);

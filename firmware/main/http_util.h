@@ -15,3 +15,10 @@ bool httphealth_alert(char *out, size_t len);
 // Liefert die Anzahl Bytes (>=0) oder -1 bei Fehler / Status != 200.
 // HTTPS wird ueber das ESP-IDF-Zertifikatsbundle verifiziert.
 int http_get(const char *url, char *buf, size_t buf_len);
+
+// HTTP(S)-Anfrage an home-central: GET (body == NULL) oder POST mit JSON-Body,
+// optional Header "X-HC-Token: <token>". Antwort-Body (nullterminiert) nach buf.
+// Liefert die Anzahl Bytes (>=0) oder -1 bei Verbindungsfehler; *status erhaelt
+// den HTTP-Status (0 bei Verbindungsfehler). Ohne Download-Waechter.
+int http_request(const char *url, const char *body, const char *token,
+                 char *buf, size_t buf_len, int *status);

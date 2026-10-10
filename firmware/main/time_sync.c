@@ -2,9 +2,11 @@
 
 #include <time.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <sys/time.h>
 #include "esp_netif_sntp.h"
 #include "esp_log.h"
+#include "hc_client.h"
 
 static const char *TAG = "time";
 
@@ -26,12 +28,15 @@ void time_sync_init(void)
     // Statischer Server pool.ntp.org. KEIN server_from_dhcp: das liess den
     // Client sonst auf einen DHCP-gelieferten NTP-Server warten und den
     // statischen Server ignorieren -> es wurde nie eine DNS-Abfrage gestartet.
-    esp_sntp_config_t cfg = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
+    // Client-Modus: Zeit von home-central (chrony im LAN), sonst pool.ntp.org.
+    static char host[40];
+    if (!hc_client_ntp_host(host, sizeof(host))) snprintf(host, sizeof(host), "pool.ntp.org");
+    esp_sntp_config_t cfg = ESP_NETIF_SNTP_DEFAULT_CONFIG(host);
     cfg.start = true;                 // synchronisiert, sobald das Netz da ist
     cfg.sync_cb = on_sync;            // loggt den ersten erfolgreichen Sync
     esp_err_t err = esp_netif_sntp_init(&cfg);
     if (err != ESP_OK) ESP_LOGW(TAG, "SNTP-Init: %s", esp_err_to_name(err));
-    else ESP_LOGI(TAG, "NTP gestartet (pool.ntp.org, TZ Deutschland)");
+    else ESP_LOGI(TAG, "NTP gestartet (%s, TZ Deutschland)", host);
 }
 
 bool time_sync_is_valid(void)

@@ -68,6 +68,30 @@ Der Bootloader markiert die neue Version erst nach erfolgreichem Start als gült
 
 ---
 
+### 2.4 Datenquelle home-central (ab v1.3.0)
+Ab v1.3.0 kann der Infoscreen alle Daten von **home-central** beziehen (eigener Server im LAN, siehe
+Repo `home-central`). Dann laufen auf dem ESP keine eigenen Internet-Abrufe und kein Telegram-Bot mehr;
+das entlastet RAM und WLAN deutlich.
+
+1. Firmware per OTA auf v1.3.0 bringen (Abschnitt 2.3). Die Datenquelle steht ab Werk auf
+   **Automatisch**: Der Infoscreen sucht home-central per mDNS (`_home-central._tcp`) und fragt die
+   Kopplung an. Bis dahin läuft er unverändert mit direkten Abfragen weiter.
+2. In der Weboberfläche von home-central erscheint „Kopplungsanfrage“ mit Name, IP und MAC des
+   Infoscreens &rarr; **Freigeben**.
+3. Der Infoscreen speichert Adresse + Token und startet neu im **Client-Modus**:
+   - alle 15 s Abruf von `/api/v1/screen` (Wetter, Warnungen, Müll, Termine, Feiertage, Kurse,
+     Fritzbox, Flugzeuge, Nachtobjekte, Message Board, Anzeige-Einstellungen),
+   - jede Minute Statusmeldung an home-central (Innenraum-Sensor, WLAN, Status, Slide-Katalog),
+   - Uhrzeit per NTP von home-central.
+4. Den **Telegram-Token** danach in home-central eintragen (der Bot läuft nur noch dort).
+
+Anzeige (Helligkeit, Slides, Intervall, Drehung) und alle Datenquellen werden im Client-Modus in
+home-central eingestellt; Änderungen an Drehung, Intervall oder Slide-Auswahl übernimmt der Infoscreen
+mit einem automatischen Neustart. Ist home-central nicht erreichbar, bleiben die letzten Daten stehen und
+unten links erscheint „home-central nicht erreichbar – Daten von HH:MM“; nach 5 min sucht der Infoscreen
+die Adresse per mDNS neu. Zurück auf direkte Abfragen: Einstellungen &rarr; **Datenquelle** &rarr;
+„Nur direkte Abfragen“ (Neustart). „Kopplung lösen“ löscht Adresse + Token und sucht neu.
+
 ## 3. Erste Einrichtung (Einrichtungs-AP)
 
 Beim ersten Start – oder wenn kein bekanntes WLAN erreichbar ist – öffnet das Gerät
@@ -95,6 +119,11 @@ einen eigenen Access Point:
 **Startseite = Message Board** (Telegram-Chat, mit Sendefeld). Über den Button
 **⚙ Einstellungen** geht es zu allen Einstellungen; von dort **← Message Board** zurück.
 
+### Datenquelle
+- **Automatisch** (Standard): home-central suchen, koppeln und nutzen (siehe 2.4).
+- **Nur direkte Abfragen**: wie bis v1.2.x, keine Suche.
+- Im Client-Modus sind die Karten für Anzeige und Datenquellen ausgeblendet (Einstellung in home-central).
+
 ### Gerät
 - **Name** – zugleich der mDNS-Name (`http://<name>.local`) und WLAN-Hostname.
   Änderung erfordert einen Neustart.
@@ -113,8 +142,22 @@ einen eigenen Access Point:
 - **Standort** – leer = Johannesberg; sonst z. B. `Aschaffenburg,DE`.
 
 ### Müll
-- **Ortsteil-ID** (jumomind/MyMüll) – Standard `44886` (Johannesberg-Oberafferbach).
-  Weitere IDs stehen als Hinweis in der Karte. Änderung wird **sofort** neu abgerufen.
+- **Datenquelle** – *MyMüll (jumomind)* **oder** *Abfall-App (AWIDO / cubefour)*.
+  Es ist immer nur **eine** Quelle aktiv; die andere wird gar nicht abgefragt.
+  Beide Einstellungen bleiben gespeichert, man kann also jederzeit zurückwechseln.
+- **MyMüll:** Ortsteil-ID – Standard `44886` (Johannesberg-Oberafferbach), weitere
+  IDs stehen als Hinweis in der Karte. Der Landkreis Aschaffenburg bedient MyMüll
+  nur noch **bis 31.12.2026**.
+- **Abfall-App (AWIDO):** Auswahl **Mandant → Gemeinde → Ortsteil/Straße →
+  (Hausnummer)**. Die Listen holt das Gerät live von AWIDO; die Hausnummer erscheint
+  nur, wo der Mandant danach unterscheidet. Die **AWIDO-ID** wird durch die Auswahl
+  gesetzt (kann auch direkt eingetragen werden). Standard: Landkreis Aschaffenburg /
+  Johannesberg / Oberafferbach (`4aa475dd-3890-45c2-8909-2a75dd1a7700`).
+  Fehlt der Mandant in der Liste: „Anderer Mandant" wählen und das Kürzel eintragen
+  (steht in der Adresse des Web-Abfuhrkalenders: `awido.cubefour.de/Customer/<kürzel>/…`).
+- **Speichern:** Ändert sich die Quelle oder die ID der aktiven Quelle, **startet das
+  Gerät neu** (die Quelle wird nur beim Start gewählt). Oben in der Karte steht die
+  aktive Quelle mit Anzahl Termine und Zeitpunkt des letzten erfolgreichen Abrufs.
 
 ### Warnungen (BBK/NINA)
 - **Warngebiet (ARS)** – 12-stelliger amtlicher Regionalschlüssel für die
@@ -210,9 +253,18 @@ In der Fritzbox unter **Heimnetz → Netzwerk → Netzwerkeinstellungen**
 benötigt (nur die öffentlichen IGD-Statuswerte, Port 49000).
 
 ### 6.3 Müllabfuhr
-Läuft über die jumomind/MyMüll-API. Standard ist Johannesberg-Oberafferbach
-(`44886`); andere Ortsteile per ID in den Einstellungen (siehe Hinweis in der Karte).
-Kein Key nötig.
+Zwei alternative, keyless Quellen (Auswahl in der Karte „Müll", siehe oben):
+- **MyMüll / jumomind** (`mymuell.jumomind.com`, JSON). Standard Johannesberg-Oberafferbach
+  (`44886`). Im Landkreis Aschaffenburg nur noch bis 31.12.2026 – danach auf die
+  Abfall-App umstellen.
+- **Abfall-App / AWIDO** (`awido.cubefour.de`, Betreiber cubefour; dahinter steht u. a.
+  die „LK Aschaffenburg Abfall-App"). Termine kommen als iCal-Datei je Jahr; ab Oktober
+  wird zusätzlich das Folgejahr geladen. Angezeigt werden nur Termine der gewählten
+  Gemeinde (z. B. entfällt die stationäre Schadstoffsammlung Mömbris), Titel ohne
+  „in <Ort>". Die Mandantenliste (48 Landkreise/Städte, überwiegend Bayern) ist fest
+  in der Firmware hinterlegt, weil AWIDO keine Liste aller Mandanten anbietet.
+
+Abruf alle 6 h, nach einem Fehlschlag erneut nach 15 min.
 
 ### 6.4 Warnungen (BBK/NINA & DWD)
 Zwei kostenlose, keyless Quellen:

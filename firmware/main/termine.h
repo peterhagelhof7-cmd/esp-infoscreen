@@ -26,3 +26,6 @@ void termine_init(void);
 // Alle Termine mit Datum vor heute loeschen. Liefert die Anzahl entfernter
 // Eintraege (0, wenn die Zeit noch nicht synchronisiert ist).
 int termine_purge_past(void);
+
+// Client-Modus: Termine von home-central setzen; termine_get_all liefert dann diese.
+void termine_set_remote(const termine_entry_t *list, int n);
