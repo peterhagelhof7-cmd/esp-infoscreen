@@ -61,8 +61,12 @@
 
   <div class="card">
     <h2>1 · Voll-Firmware</h2>
-    <p class="muted">Die komplette Infoscreen-Firmware (aktuelle Release-Version). Danach startet
+    <p class="muted">Die komplette Infoscreen-Firmware (<b>v1.3.1</b>). Danach startet
       das Gerät den Einrichtungs-Assistenten (WLAN-AP „installer").</p>
+    <p class="muted">Läuft im Netz ein <b>home-central</b>-Server, findet ihn der Infoscreen nach der
+      WLAN-Einrichtung selbst und bittet um Kopplung – in der Weboberfläche von home-central einmal
+      <b>Freigeben</b>, danach kommen alle Daten von dort. Ohne home-central arbeitet er wie gewohnt
+      mit eigenen Abfragen.</p>
     <esp-web-install-button manifest="manifest-full.json">
       <button slot="activate">Voll-Firmware flashen</button>
       <span slot="unsupported"></span>

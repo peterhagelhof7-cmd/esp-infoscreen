@@ -81,3 +81,22 @@ Framework-Entscheid: **ESP-IDF** (bestätigt).
 4. **180°-Rotation** eines 800×480×16-bit-RGB-Panels: für eine Slideshow
    (seltene Updates) unkritisch; LVGL-SW-Rotation 180° ist günstig.
 5. **Framebuffer:** 800×480×2 B = 768 KB → in PSRAM; Doppelpuffer ~1,5 MB passt.
+
+## Nachtrag 2026-10 (v1.3.x): Datenlieferant home-central
+
+Anforderung (User, 10.10.2026): alle externen Abfragen sollen künftig auf einem eigenen Server
+laufen, um den Infoscreen zu entlasten. Umgesetzt als Projekt
+[home-central](https://github.com/peterhagelhof7-cmd/home-central) (Debian-VM, Python/FastAPI).
+
+| Anforderung | Umsetzung |
+|---|---|
+| Alle externen Abfragen auf dem Server | Poller für OWM, Spessartwetter, DWD, NINA, Kurse, Fritzbox, Müll (MyMüll/AWIDO), Kino, Flugzeuge, Satelliten/NEO; Intervalle und Auswertung 1:1 aus der Firmware |
+| Telegram-Bot auf dem Server | komplett portiert (Kommandos, Warnungen, 6-Uhr-Bericht, Kino, Download-Wächter) + Meldung „Infoscreen offline“ |
+| NTP über den Server | chrony auf home-central, Infoscreen nutzt ihn im Client-Modus |
+| Webinterface wie der Infoscreen | Login, Übersicht mit **Live-Slides** (Nachbau aller Slides), Message Board, alle Einstellungen |
+| Import der Infoscreen-Einstellungen | Export-JSON des Infoscreens, ohne WLAN/Gerätename |
+| Server verwaltet alles außer WLAN/IP | Anzeige (Helligkeit, Slides, Intervall, Drehung) kommt über `/api/v1/screen` |
+| Infoscreen findet den Server selbst | mDNS `_home-central._tcp` (Avahi) + Kopplung mit Freigabe im Web |
+| Umstellung per OTA | v1.3.x per OTA; Datenquelle ab Werk „Automatisch“ |
+| Variable Slide-Anzahl | bis 32 Slides; Infoscreen meldet seinen Slide-Katalog, home-central passt Auswahl und Live-Slides an |
+| Ausfall des Servers | alte Daten + Hinweis; Einstellungs-Kopie im NVS; Daten-Cache im Flash; nach 30 min Notbetrieb mit direkten Abfragen, automatische Rückkehr |

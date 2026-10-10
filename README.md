@@ -6,6 +6,10 @@ Müllabfuhr, Internet-Status u. v. m. und wird komplett über ein Webinterface u
 optional einen Telegram-Bot bedient – **ohne Touch, ohne Cloud-Konto** (außer den
 genutzten Datenquellen).
 
+**Aktuelle Version: v1.3.1.** Läuft eigenständig **oder** als schlanker Client des Servers
+[home-central](https://github.com/peterhagelhof7-cmd/home-central), der alle Abrufe, den Bot und
+die Einstellungen übernimmt (→ unten und Admin-Guide 2.4).
+
 > **Loslegen:** fertige Firmware unter [Releases](https://github.com/peterhagelhof7-cmd/esp-infoscreen/releases)
 > herunterladen, per USB flashen (`tools\Flash.ps1`) und dem Einrichtungs-Assistenten
 > folgen. Ausführliche Anleitung: **[docs/admin-guide.md](docs/admin-guide.md)**.
@@ -30,10 +34,12 @@ genutzten Datenquellen).
 
 - Zeigt/empfängt Gruppen-Nachrichten (auch im Webinterface, mit Sendefeld)
 - Auf `@bot`-Erwähnung: **Wetter** (Spessart), **vorhersage** (OpenWeatherMap, mehrtägig),
-  **innen** (DHT22-Innenraum), **internet** (Fritzbox), **termin** (nächste 2),
-  **neu termin JJJJ-MM-TT Text**, **status** (Uptime/Heap/WLAN),
-  **kino** / **kino preview** (Kinoprogramm) – ohne Kommando: Hilfe
-- Postet **Warnungen** (BBK/NINA + DWD) und **Windböen** in die Gruppe, meldet sich nach Neustart
+  **planes**, **feiertag**, **innen** (DHT22), **internet** (Fritzbox), **termin** (nächste 5),
+  **neu termin JJJJ-MM-TT Text**, **status**, **stacks**, **reboot**, **alarm**, **nacht**
+  (Satelliten/Asteroiden), **kurse**, **kino** / **kino preview** – ohne Kommando: Hilfe
+- Postet **Warnungen** (BBK/NINA + DWD), **Windböen**, sonntags das **Kinoprogramm** und
+  **Download-Probleme** in die Gruppe, meldet sich nach Neustart
+- Im Client-Modus läuft der Bot auf home-central (nie doppelt)
 - **Tagesbericht um 6 Uhr** mit Wetter, Terminen und **Hinweisen auf markantes Wetter** (Gewitter,
   Glätte/Frost, Schnee, viel Regen/Regenbeginn, Sturmböen, Hitze, Nebel, Nachtfrost, aktive DWD-Warnung)
 
@@ -49,9 +55,12 @@ genutzten Datenquellen).
 Erstsetup per **Einrichtungs-AP**, **OTA mit automatischem Rollback**.
 
 **Datenquelle home-central (ab v1.3.0, optional):** Der Infoscreen findet den Server
-[home-central](../home-central) per mDNS, koppelt sich nach einer Freigabe und bezieht dann alle Daten,
-die Anzeige-Einstellungen und die Uhrzeit von dort – ohne eigene Internet-Abrufe und ohne eigenen Bot.
-Fällt der Server aus, bleiben die letzten Daten mit Hinweis stehen. Details: `docs/admin-guide.md` 2.4.
+[home-central](https://github.com/peterhagelhof7-cmd/home-central) per mDNS, koppelt sich nach einer
+Freigabe in dessen Weboberfläche und bezieht dann alle Daten, die Anzeige-Einstellungen und die
+Uhrzeit von dort – ohne eigene Internet-Abrufe und ohne eigenen Bot (interner RAM frei: ~87 statt
+~23 KB). Ab v1.3.1 spiegelt er die Einstellungen und sichert die letzten Daten im Flash; ist der
+Server 30 min weg, wechselt er in den **Notbetrieb** mit direkten Abfragen und kehrt danach von
+selbst zurück. Details: [docs/admin-guide.md](docs/admin-guide.md) Abschnitt 2.4.
 
 ## Hardware
 
@@ -88,7 +97,8 @@ Alternativ die `.bin` aus dem [Release](https://github.com/peterhagelhof7-cmd/es
 
 **Erste Einrichtung:** Das Gerät spannt beim ersten Start (oder wenn kein WLAN
 erreichbar ist) einen Access Point **„installer"** auf (Passwort `installer`).
-Damit verbinden, `http://192.168.4.1` öffnen, WLAN wählen – fertig. Details und
+Damit verbinden, `http://192.168.4.1` öffnen, WLAN wählen – fertig. Läuft im Netz
+home-central, erscheint dort danach die Kopplungsanfrage (einmal freigeben). Details und
 alle weiteren Einstellungen: **[docs/admin-guide.md](docs/admin-guide.md)**.
 
 ## Aus dem Quellcode bauen
@@ -106,6 +116,7 @@ Git-Stand und erzwingt nach Konfig-Änderungen automatisch einen sauberen Reconf
 ## Struktur
 
 - `firmware/` — ESP-IDF-Projekt (PlatformIO); Quellcode in `firmware/main/`
+  (`hc_client.c` = Anbindung an home-central)
 - `tools/` — `Flash.ps1` (Bauen/Flashen, Abhängigkeits-Setup)
 - `docs/` — Admin-Guide, Lastenheft, Datenquellen **und der Web-Flasher/Diagnose-Seite** (GitHub Pages, Quelle `/docs`)
 

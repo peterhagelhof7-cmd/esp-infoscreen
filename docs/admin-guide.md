@@ -12,6 +12,19 @@ usw. Bedient wird es ausschließlich über ein **Webinterface** (kein Touch) und
 optional einen **Telegram-Bot**. Alle Einstellungen liegen im Gerät (NVS-Speicher)
 und überstehen Neustart und Firmware-Update.
 
+**Zwei Betriebsarten (ab v1.3.0):**
+
+| | Direkt (wie bis v1.2.x) | Client von home-central (empfohlen) |
+|---|---|---|
+| Internet-Abrufe | im Infoscreen selbst | auf dem Server **home-central** |
+| Telegram-Bot | im Infoscreen | auf home-central |
+| Einstellungen | Webinterface des Infoscreens | Weboberfläche von home-central |
+| Uhrzeit | `pool.ntp.org` | NTP von home-central |
+| Freier interner RAM | ~23 KB | ~87 KB |
+
+Die Datenquelle steht ab Werk auf **Automatisch**: Gibt es im Netz einen home-central-Server,
+koppelt sich der Infoscreen nach einer Freigabe selbst (→ Abschnitt 2.4); sonst arbeitet er direkt.
+
 **Hardware:** ESP32-8048S070 (Variante **-N, ohne Touch**). Versorgung über den
 USB-C-Port mit der Beschriftung **„USB"** (nicht den reinen Strom-Port).
 
@@ -55,53 +68,83 @@ Nach dem Flashen startet das Gerät und spannt den Einrichtungs-AP auf (→ Absc
 
 ### 2.3 Laufendes Gerät aktualisieren (OTA, ohne Kabel)
 
-1. Aktuelle `esp-infoscreen-*.bin` aus den
-   [Releases](https://github.com/peterhagelhof7-cmd/esp-infoscreen/releases) laden.
+1. Aktuelle `esp-infoscreen-*-ota.bin` aus `firmware/bin/` bzw. den
+   [Releases](https://github.com/peterhagelhof7-cmd/esp-infoscreen/releases) nehmen.
 2. Webinterface öffnen → **⚙ Einstellungen** → Karte **Firmware-Update** →
    Datei wählen → **Hochladen & Neustart**.
 
+Alternativ von der Kommandozeile (Windows, `curl.exe`):
+
+```powershell
+curl.exe -m 900 -H "Expect:" -H "Content-Type: application/octet-stream" `
+  --data-binary "@esp-infoscreen-v1.3.1-ota.bin" http://<gerät>/ota
+```
+
+Der Upload dauert **mehrere Minuten** (~1,5 MB bei ~4 KB/s, solange das Gerät im Direkt-Modus
+seine Abrufe macht) – die Seite bzw. `curl` nicht vorher abbrechen. Ein abgebrochener Upload
+wird verworfen; das Gerät läuft mit der alten Version weiter.
+
 Der Bootloader markiert die neue Version erst nach erfolgreichem Start als gültig.
 **Bootet die neue Firmware nicht durch, wird automatisch auf die vorige zurückgerollt.**
+Die Einstellungen bleiben erhalten; vorher trotzdem **System → Einstellungen herunterladen**.
 
 > Verlorene Verbindung nach dem Update? Die Weboberfläche ist nach ~15 s wieder
 > unter `http://<gerätename>.local` bzw. der IP erreichbar.
 
+### 2.4 Betrieb mit home-central (ab v1.3.0)
+
+[home-central](https://github.com/peterhagelhof7-cmd/home-central) ist ein kleiner Server im LAN
+(Debian/Python), der alle Internet-Abrufe, den Telegram-Bot und die Einstellungen übernimmt. Der
+Infoscreen zeigt dann nur noch an – das entlastet RAM und WLAN deutlich.
+
+**Umstellung (einmalig):**
+
+1. Firmware ≥ v1.3.0 aufspielen (OTA, Abschnitt 2.3, oder Web-Flasher). Datenquelle steht ab Werk
+   auf **Automatisch**: Der Infoscreen sucht home-central per mDNS (`_home-central._tcp`) und fragt
+   die Kopplung an. Bis dahin läuft er unverändert mit direkten Abfragen weiter.
+2. Optional vorher: in home-central unter **Einstellungen → System** den Export des Infoscreens
+   importieren (übernimmt alles außer WLAN und Gerätename).
+3. In der Übersicht von home-central erscheint **„Kopplungsanfrage“** mit Name, IP, MAC und
+   Firmware → **Freigeben**.
+4. Der Infoscreen speichert Adresse + Token und startet im **Client-Modus**.
+5. Den **Telegram-Token** in home-central eintragen. Der Bot läuft im Client-Modus nur dort –
+   nie in beiden gleichzeitig.
+
+**Im Client-Modus:**
+- alle 15 s Abruf von `/api/v1/screen` (Wetter, Warnungen, Müll, Termine, Feiertage, Kurse,
+  Fritzbox, Flugzeuge, Nachtobjekte, Message Board, Anzeige-Einstellungen),
+- jede Minute Statusmeldung an home-central (Innenraum-Sensor inkl. Verlauf, WLAN, Status,
+  Task-Stacks, **Slide-Katalog** – neue Slides künftiger Versionen erscheinen dadurch automatisch
+  in home-central),
+- Uhrzeit per NTP von home-central,
+- Anzeige (Helligkeit, Slides, Intervall, Drehung) und alle Datenquellen werden **in home-central**
+  eingestellt. Helligkeit wirkt sofort; Drehung, Intervall oder Slide-Auswahl übernimmt der
+  Infoscreen mit einem automatischen Neustart.
+- Das Webinterface des Infoscreens zeigt nur noch Gerät, Datenquelle, Firmware-Update, Status und
+  System. Das Message Board sendet über den Bot von home-central.
+- home-central kann den Infoscreen neu starten (Übersicht oder Bot-Kommando `reboot`).
+
+**Wenn home-central nicht erreichbar ist (ab v1.3.1):**
+
+| Dauer | Verhalten |
+|---|---|
+| sofort | letzte Daten bleiben stehen |
+| ab 5 min | unten links: „home-central nicht erreichbar – Daten von HH:MM“; Adresse wird per mDNS neu gesucht (Server umgezogen?) |
+| ab 30 min (WLAN da) | **Notbetrieb:** Neustart mit direkten Abfragen und der gespiegelten Einstellungs-Kopie; Hinweis „Notbetrieb …“; Telegram-Bot läuft dann im Infoscreen |
+| im Notbetrieb alle 2 min | Prüfung `/api/v1/health` – ist home-central zurück, Neustart in den Client-Modus |
+
+- **Einstellungs-Kopie:** home-central liefert einen Prüfwert seiner Einstellungen mit; ändert er
+  sich, holt der Infoscreen alle Einstellungen (außer WLAN, Gerätename, Anzeige) und speichert sie im
+  eigenen NVS. Leere Keys überschreiben nie vorhandene.
+- **Daten-Cache:** die letzte Server-Antwort wird höchstens alle 15 min in der Flash-Partition
+  `storage` gesichert (Ring aus 64 Plätzen à 64 KB, CRC-geprüft). Nach einem Neustart ohne Server
+  zeigt der Infoscreen diese Daten statt leerer Slides.
+
+**Zurück / neu koppeln:** Einstellungen → **Datenquelle** → „Nur direkte Abfragen“ (Neustart,
+keine Suche mehr) bzw. **„Kopplung lösen & neu suchen“** (löscht Adresse + Token). Ein in
+home-central neu erzeugter API-Token wird automatisch nachgeholt.
+
 ---
-
-### 2.4 Datenquelle home-central (ab v1.3.0)
-Ab v1.3.0 kann der Infoscreen alle Daten von **home-central** beziehen (eigener Server im LAN, siehe
-Repo `home-central`). Dann laufen auf dem ESP keine eigenen Internet-Abrufe und kein Telegram-Bot mehr;
-das entlastet RAM und WLAN deutlich.
-
-1. Firmware per OTA auf v1.3.0 bringen (Abschnitt 2.3). Die Datenquelle steht ab Werk auf
-   **Automatisch**: Der Infoscreen sucht home-central per mDNS (`_home-central._tcp`) und fragt die
-   Kopplung an. Bis dahin läuft er unverändert mit direkten Abfragen weiter.
-2. In der Weboberfläche von home-central erscheint „Kopplungsanfrage“ mit Name, IP und MAC des
-   Infoscreens &rarr; **Freigeben**.
-3. Der Infoscreen speichert Adresse + Token und startet neu im **Client-Modus**:
-   - alle 15 s Abruf von `/api/v1/screen` (Wetter, Warnungen, Müll, Termine, Feiertage, Kurse,
-     Fritzbox, Flugzeuge, Nachtobjekte, Message Board, Anzeige-Einstellungen),
-   - jede Minute Statusmeldung an home-central (Innenraum-Sensor, WLAN, Status, Slide-Katalog),
-   - Uhrzeit per NTP von home-central.
-4. Den **Telegram-Token** danach in home-central eintragen (der Bot läuft nur noch dort).
-
-**Ab v1.3.1 – eigenständig bei Server-Ausfall:**
-- **Einstellungs-Kopie:** home-central liefert einen Prüfwert seiner Einstellungen mit; ändert er sich, holt
-  der Infoscreen alle Einstellungen (außer WLAN, Gerätename, Anzeige) und speichert sie im eigenen NVS.
-  Leere Keys überschreiben nie vorhandene.
-- **Daten-Cache:** die letzte Server-Antwort wird höchstens alle 15 min in der Flash-Partition `storage`
-  gesichert (Ring aus 64 Plätzen à 64 KB). Nach einem Neustart ohne Server zeigt der Infoscreen diese Daten.
-- **Notbetrieb:** ist home-central 30 min nicht erreichbar (bei bestehendem WLAN), startet der Infoscreen
-  mit direkten Abfragen und der Einstellungs-Kopie neu (Hinweis unten links „Notbetrieb …“, Telegram-Bot
-  läuft dann im Infoscreen). Alle 2 min prüft er `/api/v1/health`; ist home-central zurück, wechselt er
-  per Neustart wieder in den Client-Modus.
-
-Anzeige (Helligkeit, Slides, Intervall, Drehung) und alle Datenquellen werden im Client-Modus in
-home-central eingestellt; Änderungen an Drehung, Intervall oder Slide-Auswahl übernimmt der Infoscreen
-mit einem automatischen Neustart. Ist home-central nicht erreichbar, bleiben die letzten Daten stehen und
-unten links erscheint „home-central nicht erreichbar – Daten von HH:MM“; nach 5 min sucht der Infoscreen
-die Adresse per mDNS neu. Zurück auf direkte Abfragen: Einstellungen &rarr; **Datenquelle** &rarr;
-„Nur direkte Abfragen“ (Neustart). „Kopplung lösen“ löscht Adresse + Token und sucht neu.
 
 ## 3. Erste Einrichtung (Einrichtungs-AP)
 
@@ -130,10 +173,17 @@ einen eigenen Access Point:
 **Startseite = Message Board** (Telegram-Chat, mit Sendefeld). Über den Button
 **⚙ Einstellungen** geht es zu allen Einstellungen; von dort **← Message Board** zurück.
 
+> **Im Client-Modus** (→ 2.4) gibt es nur die Karten **Gerät, Datenquelle, Firmware-Update,
+> Status, Task-Stacks und System**; alle anderen hier beschriebenen Einstellungen werden in
+> home-central gemacht.
+
 ### Datenquelle
+- Statuszeile: aktiver Modus, Server-Adresse, letzter Abruf – bzw. „home-central gefunden,
+  bitte dort freigeben“ / „im Netz nicht gefunden“ / „Notbetrieb“.
 - **Automatisch** (Standard): home-central suchen, koppeln und nutzen (siehe 2.4).
 - **Nur direkte Abfragen**: wie bis v1.2.x, keine Suche.
-- Im Client-Modus sind die Karten für Anzeige und Datenquellen ausgeblendet (Einstellung in home-central).
+- **Kopplung lösen & neu suchen** (nur im Client-Modus): löscht Adresse + Token.
+- Jede Änderung startet das Gerät neu (die Betriebsart wird nur beim Start bestimmt).
 
 ### Gerät
 - **Name** – zugleich der mDNS-Name (`http://<name>.local`) und WLAN-Hostname.
@@ -209,9 +259,13 @@ einen eigenen Access Point:
    [@getidsbot](https://t.me/getidsbot) oder [@RawDataBot](https://t.me/RawDataBot)
    kurz in die Gruppe holen – die Chat-ID einer Gruppe ist **negativ** (z. B.
    `-1001234567890`).
-5. Im Webinterface unter **Telegram** Token und Chat-ID eintragen, speichern.
+5. Token und Chat-ID eintragen und speichern – **im Client-Modus in home-central**
+   (Einstellungen → Telegram), sonst im Webinterface des Infoscreens unter **Telegram**.
 
-Nach dem nächsten Poll meldet sich der Bot mit „Wieder da!" in der Gruppe.
+Der Bot darf nur an **einer** Stelle laufen (sonst holen sich beide die Nachrichten gegenseitig
+weg). Im Client-Modus läuft er automatisch nur auf home-central; im Notbetrieb übernimmt der
+Infoscreen. Nach dem Start meldet sich der Bot in der Gruppe („Wieder da!“ bzw. „home-central
+gestartet“).
 
 ### Kommandos (Bot in der Gruppe mit `@name` erwähnen)
 
@@ -220,16 +274,26 @@ Nach dem nächsten Poll meldet sich der Bot mit „Wieder da!" in der Gruppe.
 | `@name` (ohne Wort) | Kommandoliste |
 | `@name Wetter` | aktuelle Spessartwetter-Werte |
 | `@name vorhersage` | OpenWeatherMap-Vorhersage (aktuell + bis zu 3 Tage) |
+| `@name planes` | Flugzeuge in der Nähe (mit Route) |
+| `@name feiertag` | die nächsten 3 Feiertage des Bundeslandes |
 | `@name innen` | Innenraum-Temperatur/-Luftfeuchte (DHT22) |
 | `@name internet` | Fritzbox: IP, Down/Up |
-| `@name termin` | nächste 2 Termine |
+| `@name termin` | die nächsten 5 Termine (eigene + Müll + Feiertage) |
 | `@name neu termin JJJJ-MM-TT Text` | Termin anlegen (auch `TT.MM.JJJJ` / `TT.MM.`) |
-| `@name status` | Uptime, Heap, WLAN |
+| `@name status` | Infoscreen: Firmware, Uptime, RAM, WLAN (im Client-Modus zusätzlich Zustand von home-central) |
+| `@name stacks` | Stack-Reserve je Task des Infoscreens (Diagnose) |
+| `@name reboot` | Infoscreen neu starten |
+| `@name alarm` | alle aktiven Warnungen (DWD, NINA, Windböen) |
+| `@name nacht` | sichtbare Satelliten-Überflüge + erdnahe Objekte |
+| `@name kurse` | BTC-EUR und EUR-USD mit 24h-Trend |
 | `@name kino` | Kinoprogramm ab heute (→ Abschnitt 6.5) |
 | `@name kino preview` | Kinoprogramm ab nächster Woche |
 
 Zusätzlich postet der Bot automatisch in die Gruppe: **Warnungen** (BBK/NINA und
-DWD-Wetterwarnungen) sowie eine **Windböen-Warnung** (ab 50 km/h laut Spessartwetter).
+DWD-Wetterwarnungen), eine **Windböen-Warnung** (ab 50 km/h laut Spessartwetter),
+sonntags ab 10 Uhr das **Kinoprogramm**, eine Meldung, wenn eine Datenquelle **über 1 h
+nicht erreichbar** ist, und – nur auf home-central – wenn der **Infoscreen über 10 min
+nicht mehr abgefragt** hat bzw. wieder online ist.
 
 Jeden Morgen um **6 Uhr** kommt ein **Tagesbericht** (Wetter, Feiertag, Termine). Aus der
 OpenWeatherMap-Vorhersage für heute hängt er bei markantem Wetter Hinweise an:
@@ -247,11 +311,16 @@ OpenWeatherMap-Vorhersage für heute hängt er bei markantem Wetter Hinweise an:
 | Nachtfrost | morgen früh (bis ~8 Uhr) ≤ 0 °C |
 | DWD | aktive amtliche DWD-Warnung (Kopfzeile, ggf. „+N weitere“) |
 
-Die Schwellen stehen als `HW_*`-Defines in `firmware/main/telegram.c`.
+Die Schwellen stehen als `HW_*`-Defines in `firmware/main/telegram.c` (bzw. in home-central
+in `hc/telegram.py`).
 
 ---
 
 ## 6. Datenquellen & Voraussetzungen
+
+> Im **Client-Modus** fragt home-central diese Quellen ab (gleiche Intervalle und Auswertung);
+> die Voraussetzungen (Keys, Fritzbox-UPnP) gelten dann für home-central. Die Fritzbox ist dort
+> standardmäßig das Gateway des Servers.
 
 ### 6.1 OpenWeatherMap
 Kostenlosen Account auf openweathermap.org anlegen, API-Key erzeugen, im
@@ -292,9 +361,10 @@ Kein Account, kein Key. Sind keine Warnungen aktiv, zeigt die Slide „Keine".
 Das Kinoprogramm wird über das keylose kino.de-Backend geladen und **nur per
 Telegram-Bot** ausgegeben (`kino` / `kino preview`) – es gibt dafür keine Slide.
 Das Kino wird über den Config-Schlüssel **`kino_id`** gewählt (Standard `1405` =
-KINOPOLIS Aschaffenburg; `1711` = Casino Aschaffenburg). Die ID lässt sich über
-**Einstellungen → System → Einstellungen laden** (JSON mit `"kino_id": "…"`) setzen;
-ein eigenes Web-Feld gibt es dafür nicht. Höchstens ein Abruf pro Kalendertag.
+KINOPOLIS Aschaffenburg; `1711` = Casino Aschaffenburg). Im Client-Modus gibt es dafür in
+home-central die Karte **Kino**; im Direkt-Modus lässt sich die ID nur über **Einstellungen →
+System → Einstellungen laden** (JSON mit `"kino_id": "…"`) setzen. Höchstens ein Abruf pro
+Kalendertag (home-central: alle 6 h).
 
 ---
 
@@ -329,6 +399,23 @@ oder `-Monitor` nach dem Flashen). Aussagekräftige Zeilen:
 oder im Einrichtungs-AP hängt (Netzwerk-Slide / Bootlog). Ggf. neue IP – `…​.local`
 verwenden.
 
+**Keine Kopplungsanfrage in home-central.** Statuszeile der Karte **Datenquelle** prüfen:
+- „im Netz nicht gefunden“ – mDNS kommt nicht durch: Infoscreen und home-central müssen im selben
+  Netz/Subnetz sein (kein Gast-WLAN, keine Client-Isolation); auf home-central muss `avahi-daemon`
+  laufen. Die Suche wiederholt sich alle 30 s.
+- „Nur direkte Abfragen“ – Datenquelle steht auf direkt → auf **Automatisch** stellen.
+- Anfragen verfallen in home-central nach 15 min, werden aber alle 30 s erneuert.
+
+**„home-central nicht erreichbar“ unten links.** Server/Dienst prüfen (`systemctl status
+home-central`). Nach 30 min schaltet der Infoscreen in den Notbetrieb und kehrt danach von selbst
+zurück (→ 2.4). Hat home-central eine neue IP, findet der Infoscreen sie per mDNS.
+
+**Infoscreen im Client-Modus zeigt alte Einstellungen.** Drehung/Intervall/Slides werden erst nach
+dem automatischen Neustart wirksam (passiert beim nächsten Abruf, ≤ 15 s nach dem Speichern).
+
+**OTA-Upload bricht ab.** Der Upload dauert mehrere Minuten; Zeitlimit des Tools hoch genug setzen
+(→ 2.3). Ein abgebrochener Upload ändert nichts am Gerät.
+
 **Anzeige flackert kurz nach dem Einschalten.** Legt sich nach einigen Zyklen
 (Startlast durch WLAN/NTP/Datenabrufe) – normal.
 
@@ -349,3 +436,8 @@ Einstellungen ändern, ein Firmware-Update einspielen oder einen Werksreset ausl
 Das Gerät gehört daher in ein vertrauenswürdiges Heimnetz (kein Gäste-/offenes WLAN
 mit Fremdzugriff). API-Key und Telegram-Token liegen nur lokal im Gerät und sind
 nicht Teil der Firmware.
+
+Im Client-Modus speichert der Infoscreen zusätzlich den **API-Token von home-central** (für den
+Datenabruf) und eine Kopie der Einstellungen von home-central (Notbetrieb). home-central selbst ist
+mit einem Passwort geschützt; neue Infoscreens erhalten den Token erst nach **Freigabe** in dessen
+Weboberfläche.
