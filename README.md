@@ -14,6 +14,11 @@ die Einstellungen übernimmt (→ unten und Admin-Guide 2.4).
 > herunterladen, per USB flashen (`tools\Flash.ps1`) und dem Einrichtungs-Assistenten
 > folgen. Ausführliche Anleitung: **[docs/admin-guide.md](docs/admin-guide.md)**.
 
+> **Partnerprojekt [home-central](https://github.com/peterhagelhof7-cmd/home-central)** (Python/FastAPI,
+> Debian, GPL-3.0): kleiner Server im LAN, der alle Abrufe, den Telegram-Bot, ntfy-Weiterleitung und NTP
+> übernimmt und mehrere Infoscreens versorgt. Dazu MeshCore-Kanäle ↔ Telegram und Warnungen ins Mesh
+> über ein [esp-meshcore-gateway](https://github.com/peterhagelhof7-cmd/esp-meshcore-gateway).
+
 ## Funktionen
 
 **Slideshow (per Web an-/abwählbar, Reihenfolge fest, Intervall einstellbar):**
