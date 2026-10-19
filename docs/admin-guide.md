@@ -112,7 +112,11 @@ Infoscreen zeigt dann nur noch an – das entlastet RAM und WLAN deutlich.
 
 **Im Client-Modus:**
 - alle 15 s Abruf von `/api/v1/screen` (Wetter, Warnungen, Müll, Termine, Feiertage, Kurse,
-  Fritzbox, Flugzeuge, Nachtobjekte, Message Board, Anzeige-Einstellungen),
+  Fritzbox, Flugzeuge, Nachtobjekte, Heizung, Message Board, Anzeige-Einstellungen),
+- **Heizung** (ab 1.4.0): Slide mit Zustand, Störung (roter Balken) und bis zu 12 Werten vom esp-p4d.
+  Er ist nur an, wenn die Heizung in home-central eingerichtet ist (home-central ab 0.6.0); ohne
+  home-central (Direkt-Modus, Notbetrieb) gibt es ihn nicht. Ist das esp-p4d nicht erreichbar, zeigt
+  der Slide die letzten Werte mit orangem Hinweis und „Stand vor … min“,
 - jede Minute Statusmeldung an home-central (Innenraum-Sensor inkl. Verlauf, WLAN, Status,
   Task-Stacks, **Slide-Katalog** – neue Slides künftiger Versionen erscheinen dadurch automatisch
   in home-central),

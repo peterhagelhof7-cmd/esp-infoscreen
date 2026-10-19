@@ -13,6 +13,7 @@
 #include "dwd.h"
 #include "nina.h"
 #include "kurse.h"
+#include "heizung.h"
 #include "fritzbox.h"
 #include "planes.h"
 #include "space.h"
@@ -177,6 +178,34 @@ static void apply_warn(const cJSON *jd, const cJSON *jn)
         jstr(jn, "provider", n.provider, sizeof(n.provider));
     }
     nina_set(&n);
+}
+
+// "heizung": {"on","reach","online","age","mode","state","error","values":[{"n","v"}]}
+// (fehlt der Block, ist die Heizung in home-central nicht eingerichtet)
+static void apply_heizung(const cJSON *j)
+{
+    static EXT_RAM_BSS_ATTR heizung_data_t d;
+    memset(&d, 0, sizeof(d));
+    d.age = -1;
+    if (cJSON_IsObject(j)) {
+        d.configured = jbool(j, "on");
+        d.reachable = jbool(j, "reach");
+        d.online = jbool(j, "online");
+        d.age = jint(j, "age", -1);
+        jstr(j, "mode", d.mode, sizeof(d.mode));
+        jstr(j, "state", d.state, sizeof(d.state));
+        jstr(j, "error", d.error, sizeof(d.error));
+        const cJSON *vals = OBJ(j, "values");
+        const cJSON *e;
+        cJSON_ArrayForEach(e, vals) {
+            if (d.n >= HZ_MAX_VALUES) break;
+            if (!cJSON_IsObject(e)) continue;
+            jstr(e, "n", d.v[d.n].name, sizeof(d.v[0].name));
+            jstr(e, "v", d.v[d.n].value, sizeof(d.v[0].value));
+            d.n++;
+        }
+    }
+    heizung_set(&d);
 }
 
 static void apply_kurse(const cJSON *j)
@@ -348,6 +377,7 @@ static bool apply_screen(const char *json, bool from_cache, char *cfg_hash, size
     apply_spessart(OBJ(root, "spessart"));
     apply_warn(OBJ(root, "dwd"), OBJ(root, "nina"));
     apply_kurse(OBJ(root, "kurse"));
+    apply_heizung(OBJ(root, "heizung"));
     apply_fritz(OBJ(root, "fritzbox"));
     apply_planes(OBJ(root, "planes"));
     apply_space(OBJ(root, "space"));

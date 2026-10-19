@@ -14,6 +14,8 @@
 #include "planes.h"
 #include "space.h"
 #include "kurse.h"
+#include "heizung.h"
+#include "hc_client.h"
 #include "telegram.h"
 #include "config_store.h"
 #include "fonts_de.h"
@@ -1085,11 +1087,121 @@ static void kurse_build(lv_obj_t *p)
 
 static const slide_t SLIDE_KURSE = { "kurse", "Kurse", kurse_build, NULL };
 
+// ============================ Heizung (esp-p4d) ==============================
+// Daten nur ueber home-central (Block "heizung" in /api/v1/screen), Werte schon
+// formatiert. Oben Zustand gross + Betriebsart, ggf. Banner (Stoerung rot,
+// Verbindungsproblem orange), darunter bis zu 12 Werte in zwei Spalten.
+static lv_obj_t *hz_label(lv_obj_t *p, const lv_font_t *f, uint32_t col, const char *txt)
+{
+    lv_obj_t *l = lv_label_create(p);
+    lv_obj_set_style_text_font(l, f, 0);
+    lv_obj_set_style_text_color(l, lv_color_hex(col), 0);
+    lv_label_set_text(l, txt);
+    return l;
+}
+
+static void hz_banner(lv_obj_t *p, int y, uint32_t bg, const char *txt)
+{
+    lv_obj_t *b = lv_obj_create(p);
+    lv_obj_set_size(b, 740, 36);
+    lv_obj_set_pos(b, 30, y);
+    lv_obj_set_style_bg_color(b, lv_color_hex(bg), 0);
+    lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(b, 0, 0);
+    lv_obj_set_style_radius(b, 8, 0);
+    lv_obj_set_style_pad_all(b, 0, 0);
+    lv_obj_clear_flag(b, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_t *l = hz_label(b, FONT_SM, 0xffffff, txt);
+    lv_label_set_long_mode(l, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(l, 720);
+    lv_obj_center(l);
+}
+
+static void heizung_build(lv_obj_t *p)
+{
+    static EXT_RAM_BSS_ATTR heizung_data_t h;   // ~1 KB, nur im LVGL-Task
+    heizung_get(&h);
+
+    if (hc_mode() != HC_MODE_CLIENT || !h.configured) {
+        lv_obj_t *l = hz_label(p, FONT_MED, 0xb0b8d0,
+                               hc_mode() != HC_MODE_CLIENT
+                                   ? "Heizungsdaten kommen \xC3\xBC" "ber home-central."
+                                   : "Heizung in home-central noch nicht eingerichtet.");
+        lv_obj_center(l);
+        return;
+    }
+    if (h.age < 0) {
+        lv_obj_t *l = hz_label(p, FONT_MED, 0xb0b8d0, "Warte auf Daten vom esp-p4d ...");
+        lv_obj_center(l);
+        return;
+    }
+
+    // Zustand gross, darunter Betriebsart + Alter
+    char buf[96];
+    de_ascii(h.online && h.state[0] ? h.state : "Kessel antwortet nicht", buf, sizeof(buf));
+    lv_obj_t *st = hz_label(p, FONT_BIG, h.online ? 0xffffff : 0xb0b8d0, buf);
+    lv_label_set_long_mode(st, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(st, 740);
+    lv_obj_set_style_text_align(st, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(st, 30, 4);
+
+    char mode[40]; de_ascii(h.mode, mode, sizeof(mode));
+    if (h.age < 120) snprintf(buf, sizeof(buf), "%s", mode[0] ? mode : " ");
+    else snprintf(buf, sizeof(buf), "%s%sStand vor %d min", mode, mode[0] ? "  -  " : "", h.age / 60);
+    lv_obj_t *md = hz_label(p, FONT_SM, 0x8ab4f8, buf);
+    lv_obj_set_width(md, 740);
+    lv_obj_set_style_text_align(md, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(md, 30, 62);
+
+    // Banner: Stoerung hat Vorrang, sonst Verbindungsprobleme
+    int top = 92;
+    if (h.error[0]) {
+        char e[72]; de_ascii(h.error, e, sizeof(e));
+        snprintf(buf, sizeof(buf), "St\xC3\xB6rung: %s", e);
+        hz_banner(p, top, 0xb42318, buf);
+        top += 46;
+    } else if (!h.reachable) {
+        hz_banner(p, top, 0xb86e00, "esp-p4d nicht erreichbar - letzte bekannte Werte");
+        top += 46;
+    } else if (!h.online) {
+        hz_banner(p, top, 0xb86e00, "Der Kessel antwortet dem esp-p4d nicht (COM1)");
+        top += 46;
+    } else {
+        top += 8;
+    }
+
+    if (h.n == 0) {
+        lv_obj_t *l = hz_label(p, FONT_MED, 0xb0b8d0, "Noch keine Werte (Auswahl im esp-p4d)");
+        lv_obj_align(l, LV_ALIGN_TOP_MID, 0, top + 40);
+        return;
+    }
+    // Zwei Spalten, je bis zu 6 Zeilen; Name links (klein), Wert rechts (mittel)
+    const int row_h = 38;
+    int rows = (h.n + 1) / 2;
+    for (int i = 0; i < h.n; i++) {
+        int col = i / rows, row = i % rows;
+        int x = 30 + col * 380, y = top + row * row_h;
+        if (y + row_h > 372) break;
+        char nm[40]; de_ascii(h.v[i].name, nm, sizeof(nm));
+        lv_obj_t *ln = hz_label(p, FONT_SM, 0xb0b8d0, nm);
+        lv_label_set_long_mode(ln, LV_LABEL_LONG_DOT);
+        lv_obj_set_width(ln, 200);
+        lv_obj_set_pos(ln, x, y + 10);
+        char vv[24]; de_ascii(h.v[i].value, vv, sizeof(vv));
+        lv_obj_t *lv = hz_label(p, FONT_MED, 0xffffff, vv);
+        lv_obj_set_width(lv, 160);
+        lv_obj_set_style_text_align(lv, LV_TEXT_ALIGN_RIGHT, 0);
+        lv_obj_set_pos(lv, x + 200, y);
+    }
+}
+
+static const slide_t SLIDE_HEIZUNG = { "heizung", "Heizung", heizung_build, NULL };
+
 // ============================================================================
 // Katalog aller Slides (Reihenfolge = Anzeigereihenfolge).
 static const slide_t *ALL_SLIDES[] = {
     &SLIDE_CLOCK, &SLIDE_OWM, &SLIDE_PLANES, &SLIDE_NIGHT, &SLIDE_CALENDAR, &SLIDE_DWD,
-    &SLIDE_SPESSART, &SLIDE_INNENRAUM, &SLIDE_KURSE, &SLIDE_FRITZBOX, &SLIDE_NETWORK,
+    &SLIDE_SPESSART, &SLIDE_INNENRAUM, &SLIDE_HEIZUNG, &SLIDE_KURSE, &SLIDE_FRITZBOX, &SLIDE_NETWORK,
     &SLIDE_WIFI, &SLIDE_MSGBOARD,
 };
 #define N_SLIDES (int)(sizeof(ALL_SLIDES) / sizeof(ALL_SLIDES[0]))
@@ -1106,6 +1218,8 @@ void slides_register_all(void)
 {
     int added = 0;
     for (int i = 0; i < N_SLIDES; i++) {
+        // Heizung gibt es nur ueber home-central -> im Direkt-Modus nie zeigen
+        if (ALL_SLIDES[i] == &SLIDE_HEIZUNG && hc_mode() != HC_MODE_CLIENT) continue;
         if (slide_on(ALL_SLIDES[i]->id)) { slideshow_add(ALL_SLIDES[i]); added++; }
     }
     if (added == 0) slideshow_add(&SLIDE_CLOCK);   // niemals leer

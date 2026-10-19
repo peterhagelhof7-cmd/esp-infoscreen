@@ -31,6 +31,9 @@ die Einstellungen übernimmt (→ unten und Admin-Guide 2.4).
   **DWD-Wetterwarnungen** (Bright Sky), farbcodiert nach Stufe
 - **Spessartwetter** – Temperatur/Wind **inkl. Windböen** von spessartwetter.de, mit Messzeitpunkt
 - **Innenraum** – Temperatur/Luftfeuchte vom lokalen DHT22-Sensor (P4-Anschluss)
+- **Heizung** (ab 1.4.0, nur mit home-central) – Zustand, Störung und bis zu 12 Werte einer
+  Fröling-Heizung, die ein esp-p4d an COM1 ausliest; erscheint, sobald die Heizung in home-central
+  eingerichtet ist
 - **Internet / Fritzbox** – externe IP, Down-/Upload, Auslastung (UPnP/IGD, ohne Login)
 - **Netzwerk** – Modus, IP; **WLAN-Empfang** (dBm, 20-s-Mittel)
 - **Message Board** – Chatverlauf einer Telegram-Gruppe

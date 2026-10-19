@@ -21,6 +21,7 @@
 #include "kino.h"
 #include "dht22.h"
 #include "kurse.h"
+#include "heizung.h"
 #include "hc_client.h"
 
 #include <stdlib.h>
@@ -85,6 +86,7 @@ void app_main(void)
     termine_init();    // Auto-Aufraeumung vergangener Termine
     dht22_init();      // Innenraumsensor (P4, GPIO18)
     kurse_init();      // Kurse: BTC-USD + EUR-USD (CoinGecko)
+    heizung_init();    // Heizung (esp-p4d): Daten nur ueber home-central
 
     // Slideshow aufbauen: Uhr/Datum, Netzwerk, WLAN-Empfang - alle 10 s wechseln
     slideshow_init(disp);
