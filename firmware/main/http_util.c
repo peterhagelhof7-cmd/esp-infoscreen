@@ -113,6 +113,12 @@ bool httphealth_alert(char *out, size_t len)
 
 int http_get(const char *url, char *buf, size_t buf_len)
 {
+    return http_get_status(url, buf, buf_len, NULL);
+}
+
+int http_get_status(const char *url, char *buf, size_t buf_len, int *status_out)
+{
+    if (status_out) *status_out = 0;
     if (s_gate) xSemaphoreTake(s_gate, portMAX_DELAY);
 
     int result = -1;
@@ -135,6 +141,7 @@ int http_get(const char *url, char *buf, size_t buf_len)
         if (err == ESP_OK) {
             esp_http_client_fetch_headers(c);
             int status = esp_http_client_get_status_code(c);
+            if (status_out) *status_out = status;
             int total = 0, r;
             while ((r = esp_http_client_read(c, buf + total, buf_len - 1 - total)) > 0) {
                 total += r;

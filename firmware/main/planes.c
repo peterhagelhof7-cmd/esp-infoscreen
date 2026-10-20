@@ -12,6 +12,7 @@
 #include "cJSON.h"
 #include "esp_log.h"
 #include "esp_attr.h"   // EXT_RAM_BSS_ATTR
+#include "esp_timer.h"
 
 static const char *TAG = "planes";
 
@@ -24,7 +25,14 @@ static const char *TAG = "planes";
 #define DEF_LON  "9.216"
 #define DEF_RAD  "20"        // nautische Meilen
 
-#define POLL_INTERVAL_MS  (60 * 1000)   // 1x/min (Rate-Limit ~1 Anfrage/s, hoefliche Nutzung)
+// adsb.lol begrenzt je Adresse auf 500 Abfragen/Tag (dazu 60/min, 4/s):
+// alle 4 min = 360/Tag, Rest fuer Bot-Abrufe und Neustarts.
+#define POLL_INTERVAL_MS  (4 * 60 * 1000)
+// Nach HTTP 429 (Kontingent aus) so lange gar nicht fragen; die genaue
+// Freigabezeit (x-ratelimit-reset) liest http_get nicht mit.
+#define PAUSE_429_US      (60LL * 60 * 1000000)
+
+static int64_t s_pause_until;   // esp_timer-Zeit (us), vorher kein Abruf
 
 static EXT_RAM_BSS_ATTR planes_data_t s_data;   // PSRAM (spart internen RAM)
 static SemaphoreHandle_t s_lock;
@@ -164,7 +172,15 @@ static void poll_once(int route_cap)
     // cJSON sonst komplett.
     static EXT_RAM_BSS_ATTR char buf[262144];   // 256 KB
 
-    int n = http_get(url, buf, sizeof(buf));
+    if (esp_timer_get_time() < s_pause_until) return;   // Kontingent noch gesperrt
+
+    int st = 0;
+    int n = http_get_status(url, buf, sizeof(buf), &st);
+    if (n <= 0 && st == 429) {
+        s_pause_until = esp_timer_get_time() + PAUSE_429_US;
+        ESP_LOGW(TAG, "adsb.lol-Kontingent aufgebraucht - Pause 60 min, letzte Liste bleibt");
+        return;
+    }
     if (n <= 0) {
         // adsb.lol schliesst die Verbindung gelegentlich ("connection reset")
         // -> ein Retry. Bleibt es dabei, die LETZTE gute Liste behalten (kein

@@ -16,6 +16,10 @@ bool httphealth_alert(char *out, size_t len);
 // HTTPS wird ueber das ESP-IDF-Zertifikatsbundle verifiziert.
 int http_get(const char *url, char *buf, size_t buf_len);
 
+// Wie http_get, liefert zusaetzlich den HTTP-Status (0 bei Verbindungsfehler),
+// z.B. um auf 429 (Kontingent aus) anders zu reagieren als auf Netzfehler.
+int http_get_status(const char *url, char *buf, size_t buf_len, int *status_out);
+
 // HTTP(S)-Anfrage an home-central: GET (body == NULL) oder POST mit JSON-Body,
 // optional Header "X-HC-Token: <token>". Antwort-Body (nullterminiert) nach buf.
 // Liefert die Anzahl Bytes (>=0) oder -1 bei Verbindungsfehler; *status erhaelt
