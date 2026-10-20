@@ -6,7 +6,7 @@ Müllabfuhr, Internet-Status u. v. m. und wird komplett über ein Webinterface u
 optional einen Telegram-Bot bedient – **ohne Touch, ohne Cloud-Konto** (außer den
 genutzten Datenquellen).
 
-**Aktuelle Version: v1.3.1.** Läuft eigenständig **oder** als schlanker Client des Servers
+**Aktuelle Version: v1.4.1.** Läuft eigenständig **oder** als schlanker Client des Servers
 [home-central](https://github.com/peterhagelhof7-cmd/home-central), der alle Abrufe, den Bot und
 die Einstellungen übernimmt (→ unten und Admin-Guide 2.4).
 

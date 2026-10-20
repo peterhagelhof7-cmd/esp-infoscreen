@@ -77,7 +77,7 @@ Alternativ von der Kommandozeile (Windows, `curl.exe`):
 
 ```powershell
 curl.exe -m 900 -H "Expect:" -H "Content-Type: application/octet-stream" `
-  --data-binary "@esp-infoscreen-v1.3.1-ota.bin" http://<gerät>/ota
+  --data-binary "@esp-infoscreen-v1.4.1-ota.bin" http://<gerät>/ota
 ```
 
 Der Upload dauert **mehrere Minuten** (~1,5 MB bei ~4 KB/s, solange das Gerät im Direkt-Modus
