@@ -114,6 +114,8 @@ Infoscreen zeigt dann nur noch an – das entlastet RAM und WLAN deutlich.
 - alle 15 s Abruf von `/api/v1/screen` (Wetter, Warnungen, Müll, Termine, Feiertage, Kurse,
   Fritzbox, Flugzeuge, Nachtobjekte, Heizung, Message Board, Anzeige-Einstellungen),
 - **Heizung** (ab 1.4.0): Slide mit Zustand, Störung (roter Balken) und bis zu 12 Werten vom esp-p4d.
+  Ab 1.4.2 stehen Name und Wert gleich groß (Kurznamen kommen von home-central ab 0.9.2), die
+  Betriebsart wird nicht mehr angezeigt.
   Er ist nur an, wenn die Heizung in home-central eingerichtet ist (home-central ab 0.6.0); ohne
   home-central (Direkt-Modus, Notbetrieb) gibt es ihn nicht. Ist das esp-p4d nicht erreichbar, zeigt
   der Slide die letzten Werte mit orangem Hinweis und „Stand vor … min“,
